@@ -1,10 +1,12 @@
 module sendit_messenger::generic_store {
     use std::vector;
     use std::string::String;
+
     use iota::object::{Self, UID, ID};
     use iota::tx_context::{TxContext, sender};
     use iota::transfer;
     use iota::event;
+    use iota::clock::{Clock, timestamp_ms};
 
     /// ==========================
     /// SHARED LIGHTWEIGHT REF
@@ -44,6 +46,7 @@ module sendit_messenger::generic_store {
         external_id: String,
         name: String,
         content: String,
+        day_tag: u16, // 1..365 or 366
     }
 
     /// ==========================
@@ -71,6 +74,7 @@ module sendit_messenger::generic_store {
         external_id: String,
         creator: address,
         name: String,
+        day_tag: u16,
     }
 
     /// ==========================
@@ -100,6 +104,40 @@ module sendit_messenger::generic_store {
             i = i + 1;
         };
         false
+    }
+
+    /// ==========================
+    /// TIME HELPERS
+    /// ==========================
+    const MS_PER_DAY: u64 = 86_400_000;
+
+    /// Gregorian leap year rules
+    fun is_leap_year(year: u64): bool {
+        (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+    }
+
+    /// Compute (year, day_of_year) from days since Unix epoch
+    fun year_and_day_of_year(days_since_epoch: u64): (u64, u16) {
+        let mut year = 1970u64;
+        let mut days = days_since_epoch;
+
+        loop {
+            let year_len = if (is_leap_year(year)) { 366 } else { 365 };
+            if (days < year_len) break;
+            days = days - year_len;
+            year = year + 1;
+        };
+
+        // days is now 0-based day-of-year
+        (year, (days + 1) as u16)
+    }
+
+    /// Public helper: returns 1..365 or 366
+    fun day_of_year(clock: &Clock): u16 {
+        let ms = timestamp_ms(clock);
+        let days_since_epoch = ms / MS_PER_DAY;
+        let (_, day) = year_and_day_of_year(days_since_epoch);
+        day
     }
 
     /// ==========================
@@ -230,12 +268,14 @@ module sendit_messenger::generic_store {
         external_id: String,
         name: String,
         content: String,
+        clock: &Clock,
         ctx: &mut TxContext
     ) {
         assert_owner(container, ctx);
         assert!(data_type.container == object::id(container), 2);
 
         let creator = sender(ctx);
+        let day_tag = day_of_year(clock);
 
         let item = DataItem {
             id: object::new(ctx),
@@ -245,6 +285,7 @@ module sendit_messenger::generic_store {
             external_id,
             name,
             content,
+            day_tag,
         };
 
         let item_id = object::id(&item);
@@ -264,6 +305,7 @@ module sendit_messenger::generic_store {
             external_id: item.external_id,
             creator,
             name: item.name,
+            day_tag,
         });
 
         transfer::transfer(item, creator);
