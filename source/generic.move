@@ -7,6 +7,7 @@ module sendit_messenger::generic_store {
     use iota::transfer;
     use iota::event;
     use iota::clock::{Clock, timestamp_ms};
+    use iota::address;
 
     /// ==========================
     /// SHARED LIGHTWEIGHT REF
@@ -21,7 +22,7 @@ module sendit_messenger::generic_store {
     /// ==========================
     public struct Container has key, store {
         id: UID,
-        owners: vector<address>,
+        owners: vector<String>, // now stored as string
         external_id: String,
         name: String,
         description: String,
@@ -42,7 +43,7 @@ module sendit_messenger::generic_store {
         id: UID,
         container: ID,
         data_type: ID,
-        creator: address,
+        creator: String, // store as string
         external_id: String,
         name: String,
         content: String,
@@ -55,7 +56,7 @@ module sendit_messenger::generic_store {
     public struct ContainerCreatedEvent has copy, drop {
         object_id: ID,
         external_id: String,
-        owner: address,
+        owner: String, // now string
         name: String,
         description: String,
     }
@@ -72,7 +73,7 @@ module sendit_messenger::generic_store {
         container_id: ID,
         data_type_id: ID,
         external_id: String,
-        creator: address,
+        creator: String,
         name: String,
         day_tag: u16,
     }
@@ -81,7 +82,7 @@ module sendit_messenger::generic_store {
     /// AUTHORIZATION HELPERS
     /// ==========================
     fun assert_owner(container: &Container, ctx: &TxContext) {
-        let caller = sender(ctx);
+        let caller = address::to_string(sender(ctx));
         let len = vector::length(&container.owners);
         let mut found = false;
         let mut i = 0;
@@ -94,7 +95,7 @@ module sendit_messenger::generic_store {
         assert!(found, 1);
     }
 
-    fun is_owner(container: &Container, addr: address): bool {
+    fun is_owner(container: &Container, addr: String): bool {
         let len = vector::length(&container.owners);
         let mut i = 0;
         while (i < len) {
@@ -111,12 +112,10 @@ module sendit_messenger::generic_store {
     /// ==========================
     const MS_PER_DAY: u64 = 86_400_000;
 
-    /// Gregorian leap year rules
     fun is_leap_year(year: u64): bool {
         (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
     }
 
-    /// Compute (year, day_of_year) from days since Unix epoch
     fun year_and_day_of_year(days_since_epoch: u64): (u64, u16) {
         let mut year = 1970u64;
         let mut days = days_since_epoch;
@@ -128,11 +127,9 @@ module sendit_messenger::generic_store {
             year = year + 1;
         };
 
-        // days is now 0-based day-of-year
         (year, (days + 1) as u16)
     }
 
-    /// Public helper: returns 1..365 or 366
     fun day_of_year(clock: &Clock): u16 {
         let ms = timestamp_ms(clock);
         let days_since_epoch = ms / MS_PER_DAY;
@@ -143,48 +140,51 @@ module sendit_messenger::generic_store {
     /// ==========================
     /// CONTAINER
     /// ==========================
-    public entry fun create_container(
-        external_id: String,
-        name: String,
-        description: String,
-        ctx: &mut TxContext
-    ) {
-        let owner = sender(ctx);
+public entry fun create_container(
+    external_id: String,
+    name: String,
+    description: String,
+    ctx: &mut TxContext
+) {
+    let owner_str = address::to_string(sender(ctx));
 
-        let container = Container {
-            id: object::new(ctx),
-            owners: vector::singleton(owner),
-            external_id,
-            name,
-            description,
-            children: vector::empty(),
-            data_types: vector::empty(),
-            data_items: vector::empty(),
-        };
+    let container = Container {
+        id: object::new(ctx),
+        owners: vector::singleton(address::to_string(sender(ctx))), // create new String
+        external_id,
+        name,
+        description,
+        children: vector::empty(),
+        data_types: vector::empty(),
+        data_items: vector::empty(),
+    };
 
-        let cid = object::id(&container);
+    let cid = object::id(&container);
 
-        event::emit(ContainerCreatedEvent {
-            object_id: cid,
-            external_id: container.external_id,
-            owner,
-            name: container.name,
-            description: container.description,
-        });
+    event::emit(ContainerCreatedEvent {
+        object_id: cid,
+        external_id: external_id, // or just external_id if move
+        owner: address::to_string(sender(ctx)), // new String
+        name,
+        description,
+    });
 
-        transfer::transfer(container, owner);
-    }
+    transfer::transfer(container, sender(ctx));
+}
 
-    public entry fun add_owner(
-        container: &mut Container,
-        new_owner: address,
-        ctx: &mut TxContext
-    ) {
-        assert_owner(container, ctx);
-        if (!is_owner(container, new_owner)) {
-            vector::push_back(&mut container.owners, new_owner);
-        };
-    }
+
+public entry fun add_owner(
+    container: &mut Container,
+    new_owner: address,
+    ctx: &mut TxContext
+) {
+    assert_owner(container, ctx);
+    let new_owner_str = address::to_string(new_owner);
+    if (!is_owner(container, address::to_string(new_owner))) { // recreate String
+        vector::push_back(&mut container.owners, new_owner_str);
+    };
+}
+
 
     public entry fun remove_owner(
         container: &mut Container,
@@ -192,10 +192,11 @@ module sendit_messenger::generic_store {
         ctx: &mut TxContext
     ) {
         assert_owner(container, ctx);
+        let owner_str = address::to_string(owner_to_remove);
         let len = vector::length(&container.owners);
         let mut i = 0;
         while (i < len) {
-            if (*vector::borrow(&container.owners, i) == owner_to_remove) {
+            if (*vector::borrow(&container.owners, i) == owner_str) {
                 vector::swap_remove(&mut container.owners, i);
                 return;
             };
@@ -235,8 +236,8 @@ module sendit_messenger::generic_store {
             id: object::new(ctx),
             container: object::id(container),
             external_id,
-            name,
-            description,
+            name: name,
+            description: description,
         };
 
         let dt_id = object::id(&dt);
@@ -274,14 +275,14 @@ module sendit_messenger::generic_store {
         assert_owner(container, ctx);
         assert!(data_type.container == object::id(container), 2);
 
-        let creator = sender(ctx);
+        let creator_str = address::to_string(sender(ctx));
         let day_tag = day_of_year(clock);
 
         let item = DataItem {
             id: object::new(ctx),
             container: object::id(container),
             data_type: object::id(data_type),
-            creator,
+            creator: creator_str,
             external_id,
             name,
             content,
@@ -303,11 +304,11 @@ module sendit_messenger::generic_store {
             container_id: object::id(container),
             data_type_id: object::id(data_type),
             external_id: item.external_id,
-            creator,
+            creator: creator_str,
             name: item.name,
             day_tag,
         });
 
-        transfer::transfer(item, creator);
+        transfer::transfer(item, sender(ctx));
     }
 }
