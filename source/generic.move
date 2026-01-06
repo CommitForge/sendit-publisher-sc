@@ -24,6 +24,7 @@ module sendit_messenger::generic_store {
         id: UID,
         addr: string::String,
         role: string::String,
+            removed: bool, // new field to mark deletion
     }
 
     /// ==========================
@@ -110,43 +111,145 @@ module sendit_messenger::generic_store {
         true
     }
 
-    /// ==========================
-    /// AUTHORIZATION HELPERS
-    /// ==========================
-    fun assert_owner(container: &Container, ctx: &TxContext) {
-        let caller = address::to_string(sender(ctx));
-        let len = vector::length(&container.owners);
+/// ==========================
+/// AUTHORIZATION HELPERS
+/// ==========================
+fun assert_owner(container: &Container, ctx: &TxContext) {
+    let caller = make_owner_addr(address::to_string(sender(ctx)));
+    let len = vector::length(&container.owners);
 
-        let mut i = 0;
-        let mut found = false;
+    let mut i = 0;
+    let mut found = false;
 
-        while (i < len) {
-            let owner = vector::borrow(&container.owners, i);
-            if (string_eq(&owner.addr, &caller)) {
-                found = true;
-                break;
-            };
-            i = i + 1;
+    while (i < len) {
+        let owner = vector::borrow(&container.owners, i);
+        if (string_eq(&owner.addr, &caller) && !owner.removed) {
+            found = true;
+            break;
         };
+        i = i + 1;
+    };
 
-        assert!(found, 1);
-    }
+    assert!(found, 1);
+}
 
-    fun is_owner(container: &Container, addr: &string::String): bool {
-        let len = vector::length(&container.owners);
-        let mut i = 0;
+fun is_owner(container: &Container, addr: &string::String): bool {
+    let len = vector::length(&container.owners);
+    let mut i = 0;
 
-        while (i < len) {
-            let owner = vector::borrow(&container.owners, i);
-            if (string_eq(&owner.addr, addr)) {
-                return true;
-            };
-            i = i + 1;
+    while (i < len) {
+        let owner = vector::borrow(&container.owners, i);
+        if (string_eq(&owner.addr, addr) && !owner.removed) {
+            return true;
         };
+        i = i + 1;
+    };
 
-        false
+    false
+}
+
+fun make_owner_addr(addr: string::String): string::String {
+    let mut s = string::utf8(b"addr:"); // create mutable string
+    string::append(&mut s, addr);        // append owned string
+    s                                     // return the result
+}
+
+/// ==========================
+/// CONTAINER OWNER MANAGEMENT
+/// ==========================
+public entry fun add_owner(
+    container: &mut Container,
+    new_owner: string::String,  // accept real address
+    role: string::String,
+    ctx: &mut TxContext
+) {
+    assert_owner(container, ctx);
+
+    let len = vector::length(&container.owners);
+    let mut i = 0;
+    let mut found = false;
+
+    while (i < len) {
+        let owner = vector::borrow_mut(&mut container.owners, i);
+        if (string_eq(&owner.addr, &new_owner)) {
+            owner.removed = false; // reactivate removed owner
+            owner.role = role;     // optionally update role
+            found = true;
+            break;
+        };
+        i = i + 1;
+    };
+
+    if (!found) {
+        vector::push_back(
+            &mut container.owners,
+            Owner {
+                id: object::new(ctx),
+                addr: make_owner_addr(new_owner),
+                role,
+                removed: false,
+            }
+        );
+    };
+}
+
+public entry fun remove_owner(
+    container: &mut Container,
+    owner_to_remove: string::String, // ← now owned
+    ctx: &TxContext
+) {
+    assert_owner(container, ctx);
+
+    let caller = make_owner_addr(address::to_string(sender(ctx)));
+    let len = vector::length(&container.owners);
+
+    // count active owners
+    let mut active_count = 0;
+    let mut i = 0;
+    while (i < len) {
+        let owner = vector::borrow(&container.owners, i);
+        if (!owner.removed) {
+            active_count = active_count + 1;
+        };
+        i = i + 1;
+    };
+    assert!(active_count > 1, 100); // cannot remove last active owner
+
+    i = 0;
+    let mut found = false;
+
+    while (i < len) {
+        let owner = vector::borrow_mut(&mut container.owners, i);
+        if (string_eq(&owner.addr, make_owner_addr(&owner_to_remove))) {
+            assert!(!string_eq(&caller, make_owner_addr&owner_to_remove)), 101); // cannot remove yourself
+            owner.removed = true;
+            found = true;
+            break;
+        };
+        i = i + 1;
+    };
+
+    assert!(found, 102); // owner must exist
+}
+
+    /// ==========================
+    /// CHILD CONTAINERS
+    /// ==========================
+    public entry fun attach_container_child(
+        parent: &mut Container,
+        child: &Container,
+        ctx: &TxContext
+    ) {
+        assert_owner(parent, ctx);
+
+        vector::push_back(
+            &mut parent.children,
+            ObjectRef {
+                object_id: object::id(child),
+                external_id: child.external_id,
+            }
+        );
     }
-
     /// ==========================
     /// CONTAINER
     /// ==========================
@@ -156,12 +259,13 @@ module sendit_messenger::generic_store {
         description: string::String,
         ctx: &mut TxContext
     ) {
-        let owner_str = address::to_string(sender(ctx));
+        let owner_str = make_owner_addr(address::to_string(sender(ctx)));
 
         let owner = Owner {
             id: object::new(ctx),
             addr: owner_str,
             role: string::utf8(b"owner"),
+            removed: false,
         };
 
         let container = Container {
@@ -186,45 +290,6 @@ module sendit_messenger::generic_store {
         });
 
         transfer::share_object(container);
-    }
-
-    public entry fun add_owner(
-        container: &mut Container,
-        new_owner: string::String,
-        role: string::String,
-        ctx: &mut TxContext
-    ) {
-        assert_owner(container, ctx);
-
-        if (!is_owner(container, &new_owner)) {
-            vector::push_back(
-                &mut container.owners,
-                Owner {
-                    id: object::new(ctx),
-                    addr: new_owner,
-                    role,
-                }
-            );
-        };
-    }
-
-    /// ==========================
-    /// CHILD CONTAINERS
-    /// ==========================
-    public entry fun attach_container_child(
-        parent: &mut Container,
-        child: &Container,
-        ctx: &TxContext
-    ) {
-        assert_owner(parent, ctx);
-
-        vector::push_back(
-            &mut parent.children,
-            ObjectRef {
-                object_id: object::id(child),
-                external_id: child.external_id,
-            }
-        );
     }
 
     /// ==========================
