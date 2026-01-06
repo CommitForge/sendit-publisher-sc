@@ -7,7 +7,6 @@ module sendit_messenger::generic_store {
     use iota::tx_context::{TxContext, sender};
     use iota::transfer;
     use iota::event;
-    use iota::clock::{Clock, timestamp_ms};
     use iota::address;
 
     /// ==========================
@@ -23,7 +22,7 @@ module sendit_messenger::generic_store {
     /// ==========================
     public struct Owner has key, store {
         id: UID,
-        addr: string::String, // STRING owner
+        addr: string::String,
         role: string::String,
     }
 
@@ -57,7 +56,7 @@ module sendit_messenger::generic_store {
         external_id: string::String,
         name: string::String,
         content: string::String,
-        day_tag: u16,
+        day_tag: u16, // arbitrary tag now
     }
 
     /// ==========================
@@ -91,26 +90,25 @@ module sendit_messenger::generic_store {
     /// ==========================
     /// STRING HELPERS
     /// ==========================
-fun string_eq(a: &string::String, b: &string::String): bool {
-    let ba = string::bytes(a); // &vector<u8>
-    let bb = string::bytes(b); // &vector<u8>
+    fun string_eq(a: &string::String, b: &string::String): bool {
+        let ba = string::bytes(a);
+        let bb = string::bytes(b);
 
-    let len = vector::length(ba);
-    if (len != vector::length(bb)) {
-        return false;
-    };
-
-    let mut i = 0;
-    while (i < len) {
-        if (*vector::borrow(ba, i) != *vector::borrow(bb, i)) {
+        let len = vector::length(ba);
+        if (len != vector::length(bb)) {
             return false;
         };
-        i = i + 1;
-    };
 
-    true
-}
+        let mut i = 0;
+        while (i < len) {
+            if (*vector::borrow(ba, i) != *vector::borrow(bb, i)) {
+                return false;
+            };
+            i = i + 1;
+        };
 
+        true
+    }
 
     /// ==========================
     /// AUTHORIZATION HELPERS
@@ -147,36 +145,6 @@ fun string_eq(a: &string::String, b: &string::String): bool {
         };
 
         false
-    }
-
-    /// ==========================
-    /// TIME HELPERS
-    /// ==========================
-    const MS_PER_DAY: u64 = 86_400_000;
-
-    fun is_leap_year(year: u64): bool {
-        (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
-    }
-
-    fun year_and_day_of_year(days_since_epoch: u64): (u64, u16) {
-        let mut year = 1970;
-        let mut days = days_since_epoch;
-
-        loop {
-            let year_len = if (is_leap_year(year)) { 366 } else { 365 };
-            if (days < year_len) break;
-            days = days - year_len;
-            year = year + 1;
-        };
-
-        (year, (days + 1) as u16)
-    }
-
-    fun day_of_year(clock: &Clock): u16 {
-        let ms = timestamp_ms(clock);
-        let days_since_epoch = ms / MS_PER_DAY;
-        let (_, day) = year_and_day_of_year(days_since_epoch);
-        day
     }
 
     /// ==========================
@@ -308,14 +276,13 @@ fun string_eq(a: &string::String, b: &string::String): bool {
         external_id: string::String,
         name: string::String,
         content: string::String,
-        clock: &Clock,
+        day_tag: u16,
         ctx: &mut TxContext
     ) {
         assert_owner(container, ctx);
         assert!(data_type.container == object::id(container), 2);
 
         let creator = address::to_string(sender(ctx));
-        let day_tag = day_of_year(clock);
 
         let item = DataItem {
             id: object::new(ctx),
