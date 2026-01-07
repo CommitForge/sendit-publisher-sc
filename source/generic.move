@@ -220,8 +220,8 @@ public entry fun remove_owner(
 
     while (i < len) {
         let owner = vector::borrow_mut(&mut container.owners, i);
-        if (string_eq(&owner.addr, make_owner_addr(&owner_to_remove))) {
-            assert!(!string_eq(&caller, make_owner_addr&owner_to_remove)), 101); // cannot remove yourself
+        if (string_eq(&owner.addr, &make_owner_addr(owner_to_remove))) {
+            assert!(!string_eq(&caller, &make_owner_addr(owner_to_remove)), 101); // cannot remove yourself
             owner.removed = true;
             found = true;
             break;
