@@ -36,9 +36,10 @@ module sendit_messenger::generic_store {
         external_id: string::String,
         name: string::String,
         description: string::String,
-        children: vector<ObjectRef>,
-        data_types: vector<ObjectRef>,
-        data_items: vector<ObjectRef>,
+            last_data_item: Option<ID>, // <-- points to the last DataItem
+    //    children: vector<ObjectRef>,
+    //    data_types: vector<ObjectRef>,
+    //    data_items: vector<ObjectRef>,
     }
 
     public struct DataType has key, store {
@@ -58,6 +59,16 @@ module sendit_messenger::generic_store {
         name: string::String,
         content: string::String,
         day_tag: u16, // arbitrary tag now
+        prev: Option<ID>, // points to previous DataItem in the container
+    }
+
+        public struct ChildContainerLink has key, store {
+        id: UID,
+        parent_id: ID,
+        child_id: ID,
+    //    children: vector<ObjectRef>,
+    //    data_types: vector<ObjectRef>,
+    //    data_items: vector<ObjectRef>,
     }
 
     /// ==========================
@@ -86,6 +97,11 @@ module sendit_messenger::generic_store {
         creator: string::String,
         name: string::String,
         day_tag: u16,
+    }
+
+    public struct ChildContainerLinkCreatedEvent has copy, drop {
+        parent_id: ID,
+        child_id: ID,
     }
 
     /// ==========================
@@ -238,17 +254,32 @@ public entry fun remove_owner(
     public entry fun attach_container_child(
         parent: &mut Container,
         child: &Container,
-        ctx: &TxContext
+        ctx: &mut TxContext
     ) {
         assert_owner(parent, ctx);
 
+
+        let container = ChildContainerLink {
+            id: object::new(ctx),
+            parent_id: object::id(parent),
+            child_id: object::id(child),
+        };
+
+/*
         vector::push_back(
             &mut parent.children,
             ObjectRef {
                 object_id: object::id(child),
                 external_id: child.external_id,
             }
-        );
+        );*/
+
+        event::emit(ChildContainerLinkCreatedEvent {
+            parent_id: object::id(parent),
+            child_id: object::id(child)
+        });
+
+        transfer::share_object(container);
     }
     /// ==========================
     /// CONTAINER
@@ -274,9 +305,10 @@ public entry fun remove_owner(
             external_id,
             name,
             description,
-            children: vector::empty(),
+            last_data_item: option::none(),
+       /*     children: vector::empty(),
             data_types: vector::empty(),
-            data_items: vector::empty(),
+            data_items: vector::empty(),*/
         };
 
         let cid = object::id(&container);
@@ -313,7 +345,7 @@ public entry fun remove_owner(
         };
 
         let dt_id = object::id(&dt);
-
+/*
         vector::push_back(
             &mut container.data_types,
             ObjectRef {
@@ -321,7 +353,7 @@ public entry fun remove_owner(
                 external_id: dt.external_id,
             }
         );
-
+*/
         event::emit(DataTypeCreatedEvent {
             object_id: dt_id,
             container_id: object::id(container),
@@ -358,10 +390,11 @@ public entry fun remove_owner(
             name,
             content,
             day_tag,
+            prev: container.last_data_item,
         };
 
         let item_id = object::id(&item);
-
+/*
         vector::push_back(
             &mut container.data_items,
             ObjectRef {
@@ -369,6 +402,10 @@ public entry fun remove_owner(
                 external_id: item.external_id,
             }
         );
+*/
+    // update container last pointer
+container.last_data_item = option::some(item_id);
+
 
         event::emit(DataItemCreatedEvent {
             object_id: item_id,
