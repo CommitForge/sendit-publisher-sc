@@ -46,37 +46,39 @@ public struct Container has key, store {
 
 public struct DataType has key, store {
     id: UID,
-    container: ID,
+    container_id: ID,
     external_id: string::String,
     name: string::String,
     description: string::String,
     content: string::String,
-    tag_index: u128,
+    schemas: vector<string::String>,
+    tag_index: u256,
     prev: Option<ID>,
     prevDataItem: Option<ID>,
 }
 
 public struct DataItem has key, store {
     id: UID,
-    container: ID,
-    data_type: ID,
+    container_id: ID,
+    data_type_id: ID,
     creator: string::String,
     external_id: string::String,
     name: string::String,
     description: string::String,
     content: string::String,
-    tag_index: u128,
+    tag_index: u256,
     prev: Option<ID>,
 }
 
 public struct ChildContainerLink has key, store {
     id: UID,
-    parent_id: ID,
-    child_id: ID,
+    parent_container_id: ID,
+    child_container_id: ID,
     external_id: string::String,
     name: string::String,
     description: string::String,
     content: string::String,
+        prev: Option<ID>,
 }
 
 /// ==========================
@@ -106,7 +108,8 @@ public struct DataTypeCreatedEvent has copy, drop {
     name: string::String,
     description: string::String,
     content: string::String,
-    tag_index: u128,
+    schemas: vector<string::String>,
+    tag_index: u256,
     prev: Option<ID>,
     prevDataItem: Option<ID>,
 }
@@ -120,7 +123,7 @@ public struct DataItemCreatedEvent has copy, drop {
     name: string::String,
     description: string::String,
     content: string::String,
-    tag_index: u128,
+    tag_index: u256,
     prev: Option<ID>,
 }
 
@@ -132,6 +135,7 @@ public struct ChildContainerLinkCreatedEvent has copy, drop {
     name: string::String,
     description: string::String,
     content: string::String,
+        prev: Option<ID>,
 }
 
 
@@ -163,7 +167,8 @@ public struct ChildContainerLinkCreatedEvent has copy, drop {
 /// ==========================
 const E_NOT_OWNER: u64 = 0x100;
 
-fun assert_owner(container: &Container, ctx: &TxContext) {
+fun assert_owner(container: &Container, asserted: bool, ctx: &TxContext) {
+if (!asserted) {
     let caller = make_owner_addr(address::to_string(sender(ctx)));
     let len = vector::length(&container.owners);
     let mut i = 0;
@@ -178,6 +183,7 @@ fun assert_owner(container: &Container, ctx: &TxContext) {
 
     // If we get here, no owner matched
     abort E_NOT_OWNER;
+}
 }
 
 fun make_owner_addr(addr: string::String): string::String {
@@ -195,7 +201,7 @@ public entry fun add_owner(
     role: string::String,
     ctx: &mut TxContext
 ) {
-    assert_owner(container, ctx);
+    assert_owner(container, container.public_update_container, ctx);
 
     let len = vector::length(&container.owners);
     let mut i = 0;
@@ -230,7 +236,7 @@ public entry fun remove_owner(
     owner_to_remove: string::String, // ← now owned
     ctx: &TxContext
 ) {
-    assert_owner(container, ctx);
+    assert_owner(container, container.public_update_container, ctx);
 
     let caller = make_owner_addr(address::to_string(sender(ctx)));
     let len = vector::length(&container.owners);
@@ -267,31 +273,41 @@ public entry fun remove_owner(
 /// CHILD CONTAINERS
 /// ==========================
 public entry fun attach_container_child(
-    parent: &mut Container,
-    child: &Container,
-    ctx: &mut TxContext
+    parent_container: &mut Container,
+    child_container: &Container,
+    external_id: string::String,
+    name: string::String,
+    description: string::String,
+    content: string::String,
+    ctx: &mut TxContext,
 ) {
-    assert_owner(parent, ctx);
+    assert_owner(parent_container, parent_container.public_attach_container_child, ctx);
 
     let container = ChildContainerLink {
         id: object::new(ctx),
-        parent_id: object::id(parent),
-        child_id: object::id(child),
-        external_id: string::utf8(b""),
-        name: string::utf8(b""),
-        description: string::utf8(b""),
-        content: string::utf8(b""),
+        parent_container_id: object::id(parent_container),
+        child_container_id: object::id(child_container),
+        external_id: external_id,
+        name: name,
+        description: description,
+        content: content,
+        prev: parent_container.last_child,
     };
+
+    let container_id = object::id(&container);
+   parent_container.last_child = option::some(container_id);
+
 
     // Emit full snapshot event
     event::emit(ChildContainerLinkCreatedEvent {
         id: object::id(&container),
-        parent_id: object::id(parent),
-        child_id: object::id(child),
+        parent_id: object::id(parent_container),
+        child_id: object::id(child_container),
         external_id: container.external_id,
         name: container.name,
         description: container.description,
         content: container.content,
+         prev: container.prev,
     });
 
     transfer::share_object(container);
@@ -381,18 +397,22 @@ public entry fun create_data_type(
     external_id: string::String,
     name: string::String,
     description: string::String,
+    content: string::String,
+        schemas: vector<string::String>,
+        tag_index: u256,
     ctx: &mut TxContext
 ) {
-    assert_owner(container, ctx);
+    assert_owner(container, container.public_create_data_type, ctx);
 
     let dt = DataType {
         id: object::new(ctx),
-        container: object::id(container),
+        container_id: object::id(container),
         external_id,
         name,
         description,
-        content: string::utf8(b""),
-        tag_index: 0,
+        content: content,
+        schemas: schemas,
+        tag_index: tag_index,
         prev: container.last_data_type,
         prevDataItem: container.last_data_item,
     };
@@ -408,6 +428,7 @@ public entry fun create_data_type(
         name: dt.name,
         description: dt.description,
         content: dt.content,
+        schemas: schemas,
         tag_index: dt.tag_index,
         prev: dt.prev,
         prevDataItem: dt.prevDataItem,
@@ -427,21 +448,19 @@ public entry fun publish_data_item(
     name: string::String,
     description: string::String,
     content: string::String,
-    tag_index: u128,
+    tag_index: u256,
     ctx: &mut TxContext
 ) {
-    assert_owner(container, ctx);
+    assert_owner(container, container.public_publish_data_item, ctx);
 
-
-assert!(data_type.container == object::id(container), E_INVALID_DATATYPE);
-
+    assert!(data_type.container_id == object::id(container), E_INVALID_DATATYPE);
 
     let creator = address::to_string(sender(ctx));
 
     let item = DataItem {
         id: object::new(ctx),
-        container: object::id(container),
-        data_type: object::id(data_type),
+        container_id: object::id(container),
+        data_type_id: object::id(data_type),
         creator,
         external_id,
         name,
@@ -487,8 +506,7 @@ assert!(data_type.container == object::id(container), E_INVALID_DATATYPE);
         new_external_id: string::String,
     ctx: &mut TxContext
     ) {
-         assert_owner(container, ctx);
-
+         assert_owner(container, container.public_update_container, ctx);
    
             container.name = new_name;
         
@@ -500,7 +518,7 @@ assert!(data_type.container == object::id(container), E_INVALID_DATATYPE);
        
       
             container.external_id = new_external_id;
-
+         
     }
 
     // Update data type
@@ -510,24 +528,26 @@ assert!(data_type.container == object::id(container), E_INVALID_DATATYPE);
         new_name: string::String,
         new_description: string::String,
         new_content: string::String,
-        new_tag_index: u128,
+        new_schemas: vector<string::String>,
+        new_tag_index: u256,
         new_external_id: string::String,
     ctx: &mut TxContext
     ) {
-        assert_owner(container, ctx);
-        assert!(data_type.container == object::id(container), E_INVALID_DATATYPE);
+        assert_owner(container, container.public_create_data_type, ctx);
+        assert!(data_type.container_id == object::id(container), E_INVALID_DATATYPE);
 
-      
             data_type.name = new_name;
         
             data_type.description = new_description;
 
             data_type.content = new_content;
+
+             data_type.schemas = new_schemas;
       
             data_type.tag_index = new_tag_index;
      
             data_type.external_id = new_external_id;
-        
+    
     }
 
 
