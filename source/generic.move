@@ -311,8 +311,14 @@ public entry fun attach_container_child(
     content: string::String,
     ctx: &mut TxContext,
 ) {
+    // Check ownership of both containers
     assert_owner(parent_container, parent_container.public_attach_container_child, ctx);
+    assert_owner(child_container, child_container.public_attach_container_child, ctx);
 
+    // Ensure parent and child are not the same
+    assert!(object::id(parent_container) != object::id(child_container), 200);
+
+    // Increment child index with wrapping
     let next_index = add_with_wrap(parent_container.last_child_index, 1);
 
     let child_container_link = ChildContainerLink {
