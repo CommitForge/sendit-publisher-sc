@@ -41,10 +41,10 @@ public struct Container has key, store {
     last_child: Option<ID>,
     last_data_type: Option<ID>,
     last_data_item: Option<ID>,
-    last_owner_index: Option<u128>,
-    last_child_index: Option<u128>,
-    last_data_type_index: Option<u128>,
-    last_data_item_index: Option<u128>,
+    last_owner_index: u128,
+    last_child_index: u128,
+    last_data_type_index: u128,
+    last_data_item_index: u128,
 }
 
 public struct DataType has key, store {
@@ -106,10 +106,10 @@ public struct ContainerCreatedEvent has copy, drop {
     last_child: Option<ID>,
     last_data_type: Option<ID>,
     last_data_item: Option<ID>,
-    last_owner_index: Option<u128>,
-    last_child_index: Option<u128>,
-    last_data_type_index: Option<u128>,
-    last_data_item_index: Option<u128>,
+    last_owner_index: u128,
+    last_child_index: u128,
+    last_data_type_index: u128,
+    last_data_item_index: u128,
 }
 
 public struct DataTypeCreatedEvent has copy, drop {
@@ -225,8 +225,8 @@ public entry fun add_owner(
 ) {
     assert_owner(container, container.public_update_container, ctx);
 
-    let next_index = add_with_wrap(*container.last_owner_index.borrow(), 1);
-    container.last_owner_index = option::some(next_index);
+    let next_index = add_with_wrap(container.last_owner_index, 1);
+    container.last_owner_index = next_index;
 
     let len = vector::length(&container.owners);
     let mut i = 0;
@@ -313,7 +313,7 @@ public entry fun attach_container_child(
 ) {
     assert_owner(parent_container, parent_container.public_attach_container_child, ctx);
 
-    let next_index = add_with_wrap(*parent_container.last_child_index.borrow(), 1);
+    let next_index = add_with_wrap(parent_container.last_child_index, 1);
 
     let child_container_link = ChildContainerLink {
         id: object::new(ctx),
@@ -329,7 +329,7 @@ public entry fun attach_container_child(
 
     let child_container_link_id = object::id(&child_container_link);
     parent_container.last_child = option::some(child_container_link_id);
-    parent_container.last_child_index = option::some(next_index);
+    parent_container.last_child_index = next_index;
     child_container.sequence_index = next_index;
 
     // Emit full snapshot event
@@ -392,10 +392,10 @@ public entry fun create_container(
         last_child: option::none(),
         last_data_type: option::none(),
         last_data_item: option::none(),
-        last_owner_index: option::some(0),
-        last_child_index: option::some(0),
-        last_data_type_index: option::some(0),
-        last_data_item_index: option::some(0),
+        last_owner_index: 0,
+        last_child_index: 0,
+        last_data_type_index: 0,
+        last_data_item_index: 0,
     };
 
     let container_id = object::id(&container);
@@ -450,7 +450,7 @@ public entry fun create_data_type(
 ) {
     assert_owner(container, container.public_create_data_type, ctx);
 
-    let next_index = add_with_wrap(*container.last_data_type_index.borrow(), 1);
+    let next_index = add_with_wrap(container.last_data_type_index, 1);
 
     let data_type = DataType {
         id: object::new(ctx),
@@ -468,7 +468,7 @@ public entry fun create_data_type(
 
     let data_type_id = object::id(&data_type);
     container.last_data_type = option::some(data_type_id);
-    container.last_data_type_index = option::some(next_index);
+    container.last_data_type_index = next_index;
 
     // Emit full snapshot
     event::emit(DataTypeCreatedEvent {
@@ -506,7 +506,7 @@ public entry fun publish_data_item(
     assert_owner(container, container.public_publish_data_item, ctx);
     assert!(data_type.container_id == object::id(container), E_INVALID_DATATYPE);
 
-    let next_index = add_with_wrap(*container.last_data_item_index.borrow(), 1);
+    let next_index = add_with_wrap(container.last_data_item_index, 1);
 
     let creator = address::to_string(sender(ctx));
 
@@ -528,7 +528,7 @@ public entry fun publish_data_item(
 
     container.last_data_item = option::some(data_item_id);
     data_type.prev_data_item = option::some(data_item_id);
-    container.last_data_item_index = option::some(next_index);
+    container.last_data_item_index = next_index;
 
     // Emit full snapshot
     event::emit(DataItemCreatedEvent {
