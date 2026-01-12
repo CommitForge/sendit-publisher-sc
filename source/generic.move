@@ -1,8 +1,6 @@
 module sendit_messenger::generic_store {
-
     use std::string;
     use std::vector;
-
     use iota::object::{Self, UID, ID};
     use iota::tx_context::{TxContext, sender};
     use iota::transfer;
@@ -10,99 +8,132 @@ module sendit_messenger::generic_store {
     use iota::address;
 
     /// ==========================
-    /// SHARED LIGHTWEIGHT REF
-    /// ==========================
-    public struct ObjectRef has copy, drop, store {
-        object_id: ID,
-        external_id: string::String,
-    }
+    /// OWNER STRUCT/// ==========================
+/// OWNERS
+/// ==========================
+public struct Owner has key, store {
+    id: UID,
+    addr: string::String,
+    role: string::String,
+    removed: bool,
+}
 
-    /// ==========================
-    /// OWNER STRUCT
-    /// ==========================
-    public struct Owner has key, store {
-        id: UID,
-        addr: string::String,
-        role: string::String,
-            removed: bool, // new field to mark deletion
-    }
+public struct OwnerTrash has key, store {
+    id: UID,
+    container_id: ID,
+    owners: vector<ID>, // only store IDs of owners
+}
 
-    /// ==========================
-    /// OBJECTS
-    /// ==========================
-    public struct Container has key, store {
-        id: UID,
-        owners: vector<Owner>,
-        external_id: string::String,
-        name: string::String,
-        description: string::String,
-            last_data_item: Option<ID>, // <-- points to the last DataItem
-    //    children: vector<ObjectRef>,
-    //    data_types: vector<ObjectRef>,
-    //    data_items: vector<ObjectRef>,
-    }
+/// ==========================
+/// OBJECTS
+/// ==========================
+public struct Container has key, store {
+    id: UID,
+    external_id: string::String,
+    owners: vector<Owner>,
+    name: string::String,
+    description: string::String,
+    content: string::String,
+    public_update_container: bool,
+    public_attach_container_child: bool,
+    public_create_data_type: bool,
+    public_publish_data_item: bool,
+    last_owner: Option<ID>,
+    last_child: Option<ID>,
+    last_data_type: Option<ID>,
+    last_data_item: Option<ID>,
+}
 
-    public struct DataType has key, store {
-        id: UID,
-        container: ID,
-        external_id: string::String,
-        name: string::String,
-        description: string::String,
-    }
+public struct DataType has key, store {
+    id: UID,
+    container: ID,
+    external_id: string::String,
+    name: string::String,
+    description: string::String,
+    content: string::String,
+    tag_index: u128,
+    prev: Option<ID>,
+    prevDataItem: Option<ID>,
+}
 
-    public struct DataItem has key, store {
-        id: UID,
-        container: ID,
-        data_type: ID,
-        creator: string::String,
-        external_id: string::String,
-        name: string::String,
-        content: string::String,
-        day_tag: u16, // arbitrary tag now
-        prev: Option<ID>, // points to previous DataItem in the container
-    }
+public struct DataItem has key, store {
+    id: UID,
+    container: ID,
+    data_type: ID,
+    creator: string::String,
+    external_id: string::String,
+    name: string::String,
+    description: string::String,
+    content: string::String,
+    tag_index: u128,
+    prev: Option<ID>,
+}
 
-        public struct ChildContainerLink has key, store {
-        id: UID,
-        parent_id: ID,
-        child_id: ID,
-    //    children: vector<ObjectRef>,
-    //    data_types: vector<ObjectRef>,
-    //    data_items: vector<ObjectRef>,
-    }
+public struct ChildContainerLink has key, store {
+    id: UID,
+    parent_id: ID,
+    child_id: ID,
+    external_id: string::String,
+    name: string::String,
+    description: string::String,
+    content: string::String,
+}
 
-    /// ==========================
-    /// EVENTS
-    /// ==========================
-    public struct ContainerCreatedEvent has copy, drop {
-        object_id: ID,
-        external_id: string::String,
-        owner: string::String,
-        name: string::String,
-        description: string::String,
-    }
+/// ==========================
+/// EVENTS (FULL OBJECT SNAPSHOT)
+/// ==========================
+public struct ContainerCreatedEvent has copy, drop {
+    object_id: ID,
+    external_id: string::String,
+    owners: vector<string::String>,  // addresses
+    name: string::String,
+    description: string::String,
+    content: string::String,
+    public_update_container: bool,
+    public_attach_container_child: bool,
+    public_create_data_type: bool,
+    public_publish_data_item: bool,
+    last_owner: Option<ID>,
+    last_child: Option<ID>,
+    last_data_type: Option<ID>,
+    last_data_item: Option<ID>,
+}
 
-    public struct DataTypeCreatedEvent has copy, drop {
-        object_id: ID,
-        container_id: ID,
-        external_id: string::String,
-        name: string::String,
-    }
+public struct DataTypeCreatedEvent has copy, drop {
+    object_id: ID,
+    container_id: ID,
+    external_id: string::String,
+    name: string::String,
+    description: string::String,
+    content: string::String,
+    tag_index: u128,
+    prev: Option<ID>,
+    prevDataItem: Option<ID>,
+}
 
-    public struct DataItemCreatedEvent has copy, drop {
-        object_id: ID,
-        container_id: ID,
-        data_type_id: ID,
-        external_id: string::String,
-        creator: string::String,
-        name: string::String,
-        day_tag: u16,
-    }
+public struct DataItemCreatedEvent has copy, drop {
+    object_id: ID,
+    container_id: ID,
+    data_type_id: ID,
+    creator: string::String,
+    external_id: string::String,
+    name: string::String,
+    description: string::String,
+    content: string::String,
+    tag_index: u128,
+    prev: Option<ID>,
+}
 
-    public struct ChildContainerLinkCreatedEvent has copy, drop {
-        parent_id: ID,
-        child_id: ID,
-    }
+public struct ChildContainerLinkCreatedEvent has copy, drop {
+    id: ID,
+    parent_id: ID,
+    child_id: ID,
+    external_id: string::String,
+    name: string::String,
+    description: string::String,
+    content: string::String,
+}
+
 
     /// ==========================
     /// STRING HELPERS
@@ -130,38 +161,23 @@ module sendit_messenger::generic_store {
 /// ==========================
 /// AUTHORIZATION HELPERS
 /// ==========================
+const E_NOT_OWNER: u64 = 0x100;
+
 fun assert_owner(container: &Container, ctx: &TxContext) {
     let caller = make_owner_addr(address::to_string(sender(ctx)));
     let len = vector::length(&container.owners);
-
     let mut i = 0;
-    let mut found = false;
 
     while (i < len) {
-        let owner = vector::borrow(&container.owners, i);
-        if (string_eq(&owner.addr, &caller) && !owner.removed) {
-            found = true;
-            break;
+        let owner_ref = vector::borrow(&container.owners, i);
+        if (!owner_ref.removed && string_eq(&owner_ref.addr, &caller)) {
+            return; // authorized, exit early
         };
         i = i + 1;
     };
 
-    assert!(found, 1);
-}
-
-fun is_owner(container: &Container, addr: &string::String): bool {
-    let len = vector::length(&container.owners);
-    let mut i = 0;
-
-    while (i < len) {
-        let owner = vector::borrow(&container.owners, i);
-        if (string_eq(&owner.addr, addr) && !owner.removed) {
-            return true;
-        };
-        i = i + 1;
-    };
-
-    false
+    // If we get here, no owner matched
+    abort E_NOT_OWNER;
 }
 
 fun make_owner_addr(addr: string::String): string::String {
@@ -247,176 +263,280 @@ public entry fun remove_owner(
 
     assert!(found, 102); // owner must exist
 }
+/// ==========================
+/// CHILD CONTAINERS
+/// ==========================
+public entry fun attach_container_child(
+    parent: &mut Container,
+    child: &Container,
+    ctx: &mut TxContext
+) {
+    assert_owner(parent, ctx);
 
-    /// ==========================
-    /// CHILD CONTAINERS
-    /// ==========================
-    public entry fun attach_container_child(
-        parent: &mut Container,
-        child: &Container,
-        ctx: &mut TxContext
-    ) {
-        assert_owner(parent, ctx);
+    let container = ChildContainerLink {
+        id: object::new(ctx),
+        parent_id: object::id(parent),
+        child_id: object::id(child),
+        external_id: string::utf8(b""),
+        name: string::utf8(b""),
+        description: string::utf8(b""),
+        content: string::utf8(b""),
+    };
+
+    // Emit full snapshot event
+    event::emit(ChildContainerLinkCreatedEvent {
+        id: object::id(&container),
+        parent_id: object::id(parent),
+        child_id: object::id(child),
+        external_id: container.external_id,
+        name: container.name,
+        description: container.description,
+        content: container.content,
+    });
+
+    transfer::share_object(container);
+}
+
+/// ==========================
+/// CONTAINER
+/// ==========================
+public entry fun create_container(
+    external_id: string::String,
+    name: string::String,
+    description: string::String,
+    content: string::String,
+    public_update_container: bool,
+    public_attach_container_child: bool,
+    public_create_data_type: bool,
+    public_publish_data_item: bool,
+    ctx: &mut TxContext
+) {
+    let owner_addr = make_owner_addr(address::to_string(sender(ctx)));
+
+    // Create owner object
+    let owner = Owner {
+        id: object::new(ctx),
+        addr: owner_addr,
+        role: string::utf8(b"owner"),
+        removed: false,
+    };
+
+    let owner_id = object::id(&owner);
+
+    // Create container
+    let container = Container {
+        id: object::new(ctx),
+        owners: vector::singleton(owner),
+        external_id,
+        name,
+        description,
+        content,
+        public_update_container,
+        public_attach_container_child,
+        public_create_data_type,
+        public_publish_data_item,
+        last_owner: option::some(owner_id),
+        last_child: option::none(),
+        last_data_type: option::none(),
+        last_data_item: option::none(),
+    };
+
+    let cid = object::id(&container);
+
+    // --- Emit full snapshot event ---
+    let mut owner_addrs = vector::empty<string::String>();
+    let len = vector::length(&container.owners);
+    let mut i = 0;
+    while (i < len) {
+        let owner_ref = vector::borrow(&container.owners, i);
+        vector::push_back(&mut owner_addrs, owner_ref.addr);
+        i = i + 1;
+    };
+
+    event::emit(ContainerCreatedEvent {
+        object_id: cid,
+        external_id: container.external_id,
+        owners: owner_addrs,
+        name: container.name,
+        description: container.description,
+        content: container.content,
+        public_update_container: container.public_update_container,
+        public_attach_container_child: container.public_attach_container_child,
+        public_create_data_type: container.public_create_data_type,
+        public_publish_data_item: container.public_publish_data_item,
+        last_owner: container.last_owner,
+        last_child: container.last_child,
+        last_data_type: container.last_data_type,
+        last_data_item: container.last_data_item,
+    });
+
+    transfer::share_object(container);
+}
+
+/// ==========================
+/// DATA TYPE
+/// ==========================
+public entry fun create_data_type(
+    container: &mut Container,
+    external_id: string::String,
+    name: string::String,
+    description: string::String,
+    ctx: &mut TxContext
+) {
+    assert_owner(container, ctx);
+
+    let dt = DataType {
+        id: object::new(ctx),
+        container: object::id(container),
+        external_id,
+        name,
+        description,
+        content: string::utf8(b""),
+        tag_index: 0,
+        prev: container.last_data_type,
+        prevDataItem: container.last_data_item,
+    };
+
+    let dt_id = object::id(&dt);
+    container.last_data_type = option::some(dt_id);
+
+    // Emit full snapshot
+    event::emit(DataTypeCreatedEvent {
+        object_id: dt_id,
+        container_id: object::id(container),
+        external_id: dt.external_id,
+        name: dt.name,
+        description: dt.description,
+        content: dt.content,
+        tag_index: dt.tag_index,
+        prev: dt.prev,
+        prevDataItem: dt.prevDataItem,
+    });
+
+    transfer::share_object(dt);
+}
+
+/// ==========================
+/// DATA ITEM
+/// ==========================
+const E_INVALID_DATATYPE: u64 = 1001;
+public entry fun publish_data_item(
+    container: &mut Container,
+    data_type: &mut DataType,
+    external_id: string::String,
+    name: string::String,
+    description: string::String,
+    content: string::String,
+    tag_index: u128,
+    ctx: &mut TxContext
+) {
+    assert_owner(container, ctx);
 
 
-        let container = ChildContainerLink {
-            id: object::new(ctx),
-            parent_id: object::id(parent),
-            child_id: object::id(child),
-        };
+assert!(data_type.container == object::id(container), E_INVALID_DATATYPE);
 
-/*
-        vector::push_back(
-            &mut parent.children,
-            ObjectRef {
-                object_id: object::id(child),
-                external_id: child.external_id,
-            }
-        );*/
 
-        event::emit(ChildContainerLinkCreatedEvent {
-            parent_id: object::id(parent),
-            child_id: object::id(child)
-        });
+    let creator = address::to_string(sender(ctx));
 
-        transfer::share_object(container);
-    }
-    /// ==========================
-    /// CONTAINER
-    /// ==========================
-    public entry fun create_container(
-        external_id: string::String,
-        name: string::String,
-        description: string::String,
-        ctx: &mut TxContext
-    ) {
-        let owner_str = make_owner_addr(address::to_string(sender(ctx)));
+    let item = DataItem {
+        id: object::new(ctx),
+        container: object::id(container),
+        data_type: object::id(data_type),
+        creator,
+        external_id,
+        name,
+        description,
+        content,
+        tag_index,
+        prev: container.last_data_item,
+    };
 
-        let owner = Owner {
-            id: object::new(ctx),
-            addr: owner_str,
-            role: string::utf8(b"owner"),
-            removed: false,
-        };
+    let item_id = object::id(&item);
 
-        let container = Container {
-            id: object::new(ctx),
-            owners: vector::singleton(owner),
-            external_id,
-            name,
-            description,
-            last_data_item: option::none(),
-       /*     children: vector::empty(),
-            data_types: vector::empty(),
-            data_items: vector::empty(),*/
-        };
+    container.last_data_item = option::some(item_id);
+    data_type.prevDataItem = option::some(item_id);
 
-        let cid = object::id(&container);
+    // Emit full snapshot
+    event::emit(DataItemCreatedEvent {
+        object_id: item_id,
+        container_id: object::id(container),
+        data_type_id: object::id(data_type),
+        creator: item.creator,
+        external_id: item.external_id,
+        name: item.name,
+        description: item.description,
+        content: item.content,
+        tag_index: item.tag_index,
+        prev: item.prev,
+    });
 
-        event::emit(ContainerCreatedEvent {
-            object_id: cid,
-            external_id: container.external_id,
-            owner: owner_str,
-            name: container.name,
-            description: container.description,
-        });
+    transfer::share_object(item);
+}
 
-        transfer::share_object(container);
-    }
+/// ==========================
+/// UPDATE METHODS
+/// ==========================
 
-    /// ==========================
-    /// DATA TYPE
-    /// ==========================
-    public entry fun create_data_type(
+
+    // Update container
+    public entry fun update_container(
         container: &mut Container,
-        external_id: string::String,
-        name: string::String,
-        description: string::String,
-        ctx: &mut TxContext
+        new_name: string::String,
+        new_description: string::String,
+        new_content: string::String,
+        new_external_id: string::String,
+    ctx: &mut TxContext
+    ) {
+         assert_owner(container, ctx);
+
+   
+            container.name = new_name;
+        
+     
+            container.description = new_description;
+        
+       
+            container.content = new_content;
+       
+      
+            container.external_id = new_external_id;
+
+    }
+
+    // Update data type
+    public entry fun update_data_type(
+        container: &mut Container,
+        data_type: &mut DataType,
+        new_name: string::String,
+        new_description: string::String,
+        new_content: string::String,
+        new_tag_index: u128,
+        new_external_id: string::String,
+    ctx: &mut TxContext
     ) {
         assert_owner(container, ctx);
+        assert!(data_type.container == object::id(container), E_INVALID_DATATYPE);
 
-        let dt = DataType {
-            id: object::new(ctx),
-            container: object::id(container),
-            external_id,
-            name,
-            description,
-        };
+      
+            data_type.name = new_name;
+        
+            data_type.description = new_description;
 
-        let dt_id = object::id(&dt);
-/*
-        vector::push_back(
-            &mut container.data_types,
-            ObjectRef {
-                object_id: dt_id,
-                external_id: dt.external_id,
-            }
-        );
-*/
-        event::emit(DataTypeCreatedEvent {
-            object_id: dt_id,
-            container_id: object::id(container),
-            external_id: dt.external_id,
-            name: dt.name,
-        });
-
-        transfer::transfer(dt, sender(ctx));
+            data_type.content = new_content;
+      
+            data_type.tag_index = new_tag_index;
+     
+            data_type.external_id = new_external_id;
+        
     }
 
-    /// ==========================
-    /// DATA ITEM
-    /// ==========================
-    public entry fun publish_data_item(
-        container: &mut Container,
-        data_type: &DataType,
-        external_id: string::String,
-        name: string::String,
-        content: string::String,
-        day_tag: u16,
-        ctx: &mut TxContext
-    ) {
-        assert_owner(container, ctx);
-        assert!(data_type.container == object::id(container), 2);
-
-        let creator = address::to_string(sender(ctx));
-
-        let item = DataItem {
-            id: object::new(ctx),
-            container: object::id(container),
-            data_type: object::id(data_type),
-            creator,
-            external_id,
-            name,
-            content,
-            day_tag,
-            prev: container.last_data_item,
-        };
-
-        let item_id = object::id(&item);
-/*
-        vector::push_back(
-            &mut container.data_items,
-            ObjectRef {
-                object_id: item_id,
-                external_id: item.external_id,
-            }
-        );
-*/
-    // update container last pointer
-container.last_data_item = option::some(item_id);
 
 
-        event::emit(DataItemCreatedEvent {
-            object_id: item_id,
-            container_id: object::id(container),
-            data_type_id: object::id(data_type),
-            external_id: item.external_id,
-            creator: item.creator,
-            name: item.name,
-            day_tag,
-        });
 
-        transfer::transfer(item, sender(ctx));
-    }
+
+
+
+
+
+
 }
