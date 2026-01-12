@@ -392,10 +392,10 @@ public entry fun create_container(
         last_child: option::none(),
         last_data_type: option::none(),
         last_data_item: option::none(),
-        last_owner_index: option::none(),
-        last_child_index: option::none(),
-        last_data_type_index: option::none(),
-        last_data_item_index: option::none(),
+        last_owner_index: option::some(0),
+        last_child_index: option::some(0),
+        last_data_type_index: option::some(0),
+        last_data_item_index: option::some(0),
     };
 
     let container_id = object::id(&container);
