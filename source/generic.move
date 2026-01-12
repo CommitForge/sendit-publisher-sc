@@ -277,7 +277,7 @@ public entry fun attach_container_child(
 ) {
     assert_owner(parent_container, parent_container.public_attach_container_child, ctx);
 
-    let container = ChildContainerLink {
+    let child_container_link = ChildContainerLink {
         id: object::new(ctx),
         parent_container_id: object::id(parent_container),
         child_container_id: object::id(child_container),
@@ -288,22 +288,22 @@ public entry fun attach_container_child(
         prev: parent_container.last_child,
     };
 
-    let container_id = object::id(&container);
-    parent_container.last_child = option::some(container_id);
+    let child_container_link_id = object::id(&child_container_link);
+    parent_container.last_child = option::some(child_container_link_id);
 
     // Emit full snapshot event
     event::emit(ChildContainerLinkCreatedEvent {
-        id: object::id(&container),
+        id: object::id(&child_container_link),
         parent_id: object::id(parent_container),
         child_id: object::id(child_container),
-        external_id: container.external_id,
-        name: container.name,
-        description: container.description,
-        content: container.content,
-        prev: container.prev,
+        external_id: child_container_link.external_id,
+        name: child_container_link.name,
+        description: child_container_link.description,
+        content: child_container_link.content,
+        prev: child_container_link.prev,
     });
 
-    transfer::share_object(container);
+    transfer::share_object(child_container_link);
 }
 
 /// ==========================
