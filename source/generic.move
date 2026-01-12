@@ -37,10 +37,10 @@ public struct Container has key, store {
     public_attach_container_child: bool,
     public_create_data_type: bool,
     public_publish_data_item: bool,
-    last_owner: Option<ID>,
-    last_child: Option<ID>,
-    last_data_type: Option<ID>,
-    last_data_item: Option<ID>,
+    last_owner_id: Option<ID>,
+    last_child_id: Option<ID>,
+    last_data_type_id: Option<ID>,
+    last_data_item_id: Option<ID>,
     last_owner_index: u128,
     last_child_index: u128,
     last_data_type_index: u128,
@@ -57,8 +57,8 @@ public struct DataType has key, store {
     schemas: string::String,
     sequence_index: u128,
     tag_index: u128,
-    prev: Option<ID>,
-    prev_data_item: Option<ID>,
+    prev_id: Option<ID>,
+    prev_data_item_id: Option<ID>,
 }
 
 public struct DataItem has key, store {
@@ -72,7 +72,7 @@ public struct DataItem has key, store {
     content: string::String,
     sequence_index: u128,
     tag_index: u128,
-    prev: Option<ID>,
+    prev_id: Option<ID>,
 }
 
 public struct ChildContainerLink has key, store {
@@ -84,7 +84,7 @@ public struct ChildContainerLink has key, store {
     description: string::String,
     content: string::String,
     sequence_index: u128,
-    prev: Option<ID>,
+    prev_id: Option<ID>,
 }
 
 /// ==========================
@@ -102,10 +102,10 @@ public struct ContainerCreatedEvent has copy, drop {
     public_attach_container_child: bool,
     public_create_data_type: bool,
     public_publish_data_item: bool,
-    last_owner: Option<ID>,
-    last_child: Option<ID>,
-    last_data_type: Option<ID>,
-    last_data_item: Option<ID>,
+    last_owner_id: Option<ID>,
+    last_child_id: Option<ID>,
+    last_data_type_id: Option<ID>,
+    last_data_item_id: Option<ID>,
     last_owner_index: u128,
     last_child_index: u128,
     last_data_type_index: u128,
@@ -122,8 +122,8 @@ public struct DataTypeCreatedEvent has copy, drop {
     schemas: string::String,
     sequence_index: u128,
     tag_index: u128,
-    prev: Option<ID>,
-    prev_data_item: Option<ID>,
+    prev_id: Option<ID>,
+    prev_data_item_id: Option<ID>,
 }
 
 public struct DataItemPublishedEvent has copy, drop {
@@ -137,19 +137,19 @@ public struct DataItemPublishedEvent has copy, drop {
     content: string::String,
     sequence_index: u128,
     tag_index: u128,
-    prev: Option<ID>,
+    prev_id: Option<ID>,
 }
 
 public struct ChildContainerLinkAttachedEvent has copy, drop {
     id: ID,
-    parent_id: ID,
-    child_id: ID,
+    parent_container_id: ID,
+    child_container_id: ID,
     external_id: string::String,
     name: string::String,
     description: string::String,
     content: string::String,
     sequence_index: u128,
-    prev: Option<ID>,
+    prev_id: Option<ID>,
 }
 
 /// ==========================
@@ -330,25 +330,25 @@ public entry fun attach_container_child(
         description: description,
         content: content,
         sequence_index: next_index,
-        prev: parent_container.last_child,
+        prev_id: parent_container.last_child_id,
     };
 
     let child_container_link_id = object::id(&child_container_link);
-    parent_container.last_child = option::some(child_container_link_id);
+    parent_container.last_child_id = option::some(child_container_link_id);
     parent_container.last_child_index = next_index;
     child_container.sequence_index = next_index;
 
     // Emit full snapshot event
     event::emit(ChildContainerLinkAttachedEvent {
         id: object::id(&child_container_link),
-        parent_id: object::id(parent_container),
-        child_id: object::id(child_container),
+        parent_container_id: object::id(parent_container),
+        child_container_id: object::id(child_container),
         external_id: child_container_link.external_id,
         name: child_container_link.name,
         description: child_container_link.description,
         content: child_container_link.content,
         sequence_index: child_container_link.sequence_index,
-        prev: child_container_link.prev,
+        prev_id: child_container_link.prev_id,
     });
 
     transfer::share_object(child_container_link);
@@ -394,10 +394,10 @@ public entry fun create_container(
         public_attach_container_child,
         public_create_data_type,
         public_publish_data_item,
-        last_owner: option::some(owner_id),
-        last_child: option::none(),
-        last_data_type: option::none(),
-        last_data_item: option::none(),
+        last_owner_id: option::some(owner_id),
+        last_child_id: option::none(),
+        last_data_type_id: option::none(),
+        last_data_item_id: option::none(),
         last_owner_index: 0,
         last_child_index: 0,
         last_data_type_index: 0,
@@ -428,10 +428,10 @@ public entry fun create_container(
         public_attach_container_child: container.public_attach_container_child,
         public_create_data_type: container.public_create_data_type,
         public_publish_data_item: container.public_publish_data_item,
-        last_owner: container.last_owner,
-        last_child: container.last_child,
-        last_data_type: container.last_data_type,
-        last_data_item: container.last_data_item,
+        last_owner_id: container.last_owner_id,
+        last_child_id: container.last_child_id,
+        last_data_type_id: container.last_data_type_id,
+        last_data_item_id: container.last_data_item_id,
         last_owner_index: container.last_owner_index,
         last_child_index: container.last_child_index,
         last_data_type_index: container.last_data_type_index,
@@ -468,12 +468,12 @@ public entry fun create_data_type(
         schemas: schemas,
         sequence_index: next_index,
         tag_index: tag_index,
-        prev: container.last_data_type,
-        prev_data_item: container.last_data_item,
+        prev_id: container.last_data_type_id,
+        prev_data_item_id: container.last_data_item_id,
     };
 
     let data_type_id = object::id(&data_type);
-    container.last_data_type = option::some(data_type_id);
+    container.last_data_type_id = option::some(data_type_id);
     container.last_data_type_index = next_index;
 
     // Emit full snapshot
@@ -487,8 +487,8 @@ public entry fun create_data_type(
         schemas: data_type.schemas,
         sequence_index: data_type.sequence_index,
         tag_index: data_type.tag_index,
-        prev: data_type.prev,
-        prev_data_item: data_type.prev_data_item,
+        prev_id: data_type.prev_id,
+        prev_data_item_id: data_type.prev_data_item_id,
     });
 
     transfer::share_object(data_type);
@@ -527,13 +527,13 @@ public entry fun publish_data_item(
         content,
         sequence_index: next_index,
         tag_index,
-        prev: container.last_data_item,
+        prev_id: container.last_data_item_id,
     };
 
     let data_item_id = object::id(&data_item);
 
-    container.last_data_item = option::some(data_item_id);
-    data_type.prev_data_item = option::some(data_item_id);
+    container.last_data_item_id = option::some(data_item_id);
+    data_type.prev_data_item_id = option::some(data_item_id);
     container.last_data_item_index = next_index;
 
     // Emit full snapshot
@@ -548,7 +548,7 @@ public entry fun publish_data_item(
         content: data_item.content,
         sequence_index: data_item.sequence_index,
         tag_index: data_item.tag_index,
-        prev: data_item.prev,
+        prev_id: data_item.prev_id,
     });
 
     transfer::share_object(data_item);
