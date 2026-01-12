@@ -51,7 +51,7 @@ public struct DataType has key, store {
     name: string::String,
     description: string::String,
     content: string::String,
-    schemas: vector<string::String>,
+    schemas: string::String,
     tag_index: u256,
     prev: Option<ID>,
     prevDataItem: Option<ID>,
@@ -108,7 +108,7 @@ public struct DataTypeCreatedEvent has copy, drop {
     name: string::String,
     description: string::String,
     content: string::String,
-    schemas: vector<string::String>,
+    schemas: string::String,
     tag_index: u256,
     prev: Option<ID>,
     prevDataItem: Option<ID>,
@@ -398,7 +398,7 @@ public entry fun create_data_type(
     name: string::String,
     description: string::String,
     content: string::String,
-        schemas: vector<string::String>,
+        schemas: string::String,
         tag_index: u256,
     ctx: &mut TxContext
 ) {
@@ -525,16 +525,18 @@ public entry fun publish_data_item(
     public entry fun update_data_type(
         container: &mut Container,
         data_type: &mut DataType,
+        new_external_id: string::String,
         new_name: string::String,
         new_description: string::String,
         new_content: string::String,
-        new_schemas: vector<string::String>,
+        new_schemas: string::String,
         new_tag_index: u256,
-        new_external_id: string::String,
     ctx: &mut TxContext
     ) {
         assert_owner(container, container.public_create_data_type, ctx);
         assert!(data_type.container_id == object::id(container), E_INVALID_DATATYPE);
+
+data_type.external_id = new_external_id;
 
             data_type.name = new_name;
         
@@ -546,7 +548,7 @@ public entry fun publish_data_item(
       
             data_type.tag_index = new_tag_index;
      
-            data_type.external_id = new_external_id;
+            
     
     }
 
