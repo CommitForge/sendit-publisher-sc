@@ -126,7 +126,7 @@ public struct DataTypeCreatedEvent has copy, drop {
     prev_data_item: Option<ID>,
 }
 
-public struct DataItemCreatedEvent has copy, drop {
+public struct DataItemPublishedEvent has copy, drop {
     object_id: ID,
     container_id: ID,
     data_type_id: ID,
@@ -140,7 +140,7 @@ public struct DataItemCreatedEvent has copy, drop {
     prev: Option<ID>,
 }
 
-public struct ChildContainerLinkCreatedEvent has copy, drop {
+public struct ChildContainerLinkAttachedEvent has copy, drop {
     id: ID,
     parent_id: ID,
     child_id: ID,
@@ -339,7 +339,7 @@ public entry fun attach_container_child(
     child_container.sequence_index = next_index;
 
     // Emit full snapshot event
-    event::emit(ChildContainerLinkCreatedEvent {
+    event::emit(ChildContainerLinkAttachedEvent {
         id: object::id(&child_container_link),
         parent_id: object::id(parent_container),
         child_id: object::id(child_container),
@@ -537,7 +537,7 @@ public entry fun publish_data_item(
     container.last_data_item_index = next_index;
 
     // Emit full snapshot
-    event::emit(DataItemCreatedEvent {
+    event::emit(DataItemPublishedEvent {
         object_id: data_item_id,
         container_id: object::id(container),
         data_type_id: object::id(data_type),
