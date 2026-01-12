@@ -158,7 +158,7 @@ fun string_eq(a: &string::String, b: &string::String): bool {
 /// ==========================
 /// AUTHORIZATION HELPERS
 /// ==========================
-const E_NOT_OWNER: u64 = 0x100;
+const E_NOT_OWNER: u64 = 0x1000;
 
 fun assert_owner(container: &Container, asserted: bool, ctx: &TxContext) {
     if (!asserted) {
