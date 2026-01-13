@@ -76,10 +76,10 @@ public struct DataItem has key, store {
     prev_data_type_item_id: Option<ID>,
 }
 
-public struct ChildContainerLink has key, store {
+public struct ContainerChildLink has key, store {
     id: UID,
-    parent_container_id: ID,
-    child_container_id: ID,
+    container_parent_id: ID,
+    container_child_id: ID,
     external_id: string::String,
     name: string::String,
     description: string::String,
@@ -142,10 +142,10 @@ public struct DataItemPublishedEvent has copy, drop {
     prev_data_type_item_id: Option<ID>,
 }
 
-public struct ChildContainerLinkAttachedEvent has copy, drop {
+public struct ContainerChildLinkAttachedEvent has copy, drop {
     id: ID,
-    parent_container_id: ID,
-    child_container_id: ID,
+    container_parent_id: ID,
+    container_child_id: ID,
     external_id: string::String,
     name: string::String,
     description: string::String,
@@ -385,10 +385,10 @@ public entry fun attach_container_child(
     // Increment child index with wrapping
     let next_index = add_with_wrap(parent_container.last_child_index, 1);
 
-    let child_container_link = ChildContainerLink {
+    let child_container_link = ContainerChildLink {
         id: object::new(ctx),
-        parent_container_id: object::id(parent_container),
-        child_container_id: object::id(child_container),
+        container_parent_id: object::id(parent_container),
+        container_child_id: object::id(child_container),
         external_id: external_id,
         name: name,
         description: description,
