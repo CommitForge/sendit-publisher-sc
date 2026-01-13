@@ -164,6 +164,7 @@ public struct OwnerAddedEvent has copy, drop {
 public struct OwnerRemovedEvent has copy, drop {
     container_id: ID,
     owner_addr: string::String,
+    role: string::String,
     sequence_index: u128,
 }
 
@@ -317,6 +318,7 @@ public entry fun remove_owner(
 ) {
     assert_owner(container, container.public_update_container, ctx);
 
+    let container_id = object::id(container);
     let caller = make_owner_addr(address::to_string(sender(ctx)));
     let target = make_owner_addr(owner_to_remove);
 
@@ -333,8 +335,8 @@ public entry fun remove_owner(
     };
     assert!(active_count > 1, E_CANNOT_REMOVE_LAST_OWNER);
 
-    let next_index = add_with_wrap(container.last_owner_index, 1);
-    container.last_owner_index = next_index;
+    // let next_index = add_with_wrap(container.last_owner_index, 1);
+    // container.last_owner_index = next_index;
 
     i = 0;
     let mut found = false;
@@ -344,8 +346,14 @@ public entry fun remove_owner(
         if (string_eq(&owner.addr, &target)) {
             assert!(!string_eq(&caller, &target), E_CANNOT_REMOVE_SELF);
             owner.removed = true;
-            owner.sequence_index = next_index;
+        //    owner.sequence_index = next_index;
             found = true;
+            event::emit(OwnerRemovedEvent {
+                container_id: container_id,
+                owner_addr: target,
+                role: owner.role,
+                sequence_index: owner.sequence_index,
+            });
             break;
         };
         i = i + 1;
@@ -353,11 +361,6 @@ public entry fun remove_owner(
 
     assert!(found, E_OWNER_NOT_FOUND);
 
-    event::emit(OwnerRemovedEvent {
-        container_id: object::id(container),
-        owner_addr: target,
-        sequence_index: next_index,
-    });
 }
 
 /// ==========================
