@@ -46,6 +46,12 @@ public struct Container has key, store {
     last_child_index: u128,
     last_data_type_index: u128,
     last_data_item_index: u128,
+    event_create: bool,
+    event_publish: bool,
+    event_attach: bool,
+    event_add: bool,
+    event_remove: bool,
+    event_update: bool,
 }
 
 public struct DataType has key, store {
@@ -113,6 +119,12 @@ public struct ContainerCreatedEvent has copy, drop {
     last_child_index: u128,
     last_data_type_index: u128,
     last_data_item_index: u128,
+    event_create: bool,
+    event_publish: bool,
+    event_attach: bool,
+    event_add: bool,
+    event_remove: bool,
+    event_update: bool,
 }
 
 public struct DataTypeCreatedEvent has copy, drop {
@@ -308,14 +320,16 @@ public entry fun add_owner(
             owner,
         );
         container.owners_active = container.owners_active + 1;
-        event::emit(OwnerAddedEvent {
-            object_id: owner_id,
-            container_id: object::id(container),
-            addr: owner_addr,
-            role,
-            removed: owner_removed,
-            sequence_index: next_index,
-        });
+        if (container.event_add) {
+            event::emit(OwnerAddedEvent {
+                object_id: owner_id,
+                container_id: object::id(container),
+                addr: owner_addr,
+                role,
+                removed: owner_removed,
+                sequence_index: next_index,
+            });
+        };
     };
 }
 
@@ -348,14 +362,16 @@ public entry fun remove_owner(
             owner.removed = true;
             container.owners_active = container.owners_active - 1;
             found = true;
-            event::emit(OwnerRemovedEvent {
-                object_id: object::id(owner),
-                container_id: container_id,
-                addr: target,
-                role: owner.role,
-                removed: owner.removed,
-                sequence_index: owner.sequence_index,
-            });
+            if (container.event_remove) {
+                event::emit(OwnerRemovedEvent {
+                    object_id: object::id(owner),
+                    container_id: container_id,
+                    addr: target,
+                    role: owner.role,
+                    removed: owner.removed,
+                    sequence_index: owner.sequence_index,
+                });
+            };
             break;
         };
         i = i + 1;
@@ -404,18 +420,19 @@ public entry fun attach_container_child(
     container_child.sequence_index = next_index;
 
     // Emit full snapshot event
-    event::emit(ContainerChildLinkAttachedEvent {
-        id: object::id(&container_child_link),
-        container_parent_id: object::id(container_parent),
-        container_child_id: object::id(container_child),
-        external_id: container_child_link.external_id,
-        name: container_child_link.name,
-        description: container_child_link.description,
-        content: container_child_link.content,
-        sequence_index: container_child_link.sequence_index,
-        prev_id: container_child_link.prev_id,
-    });
-
+    if (container_parent.event_attach) {
+        event::emit(ContainerChildLinkAttachedEvent {
+            id: object::id(&container_child_link),
+            container_parent_id: object::id(container_parent),
+            container_child_id: object::id(container_child),
+            external_id: container_child_link.external_id,
+            name: container_child_link.name,
+            description: container_child_link.description,
+            content: container_child_link.content,
+            sequence_index: container_child_link.sequence_index,
+            prev_id: container_child_link.prev_id,
+        });
+    };
     transfer::share_object(container_child_link);
 }
 
@@ -431,6 +448,12 @@ public entry fun create_container(
     public_attach_container_child: bool,
     public_create_data_type: bool,
     public_publish_data_item: bool,
+    event_create: bool,
+    event_publish: bool,
+    event_attach: bool,
+    event_add: bool,
+    event_remove: bool,
+    event_update: bool,
     ctx: &mut TxContext,
 ) {
     let owner_addr = make_owner_addr(address::to_string(sender(ctx)));
@@ -468,6 +491,12 @@ public entry fun create_container(
         last_child_index: 0,
         last_data_type_index: 0,
         last_data_item_index: 0,
+        event_create: event_create,
+        event_publish: event_publish,
+        event_attach: event_attach,
+        event_add: event_add,
+        event_remove: event_remove,
+        event_update: event_update,
     };
 
     let container_id = object::id(&container);
@@ -482,28 +511,36 @@ public entry fun create_container(
         i = i + 1;
     };
 
-    event::emit(ContainerCreatedEvent {
-        object_id: container_id,
-        external_id: container.external_id,
-        owners: owner_addrs,
-        owners_active: 1,
-        name: container.name,
-        description: container.description,
-        content: container.content,
-        sequence_index: container.sequence_index,
-        public_update_container: container.public_update_container,
-        public_attach_container_child: container.public_attach_container_child,
-        public_create_data_type: container.public_create_data_type,
-        public_publish_data_item: container.public_publish_data_item,
-        last_owner_id: container.last_owner_id,
-        last_child_id: container.last_child_id,
-        last_data_type_id: container.last_data_type_id,
-        last_data_item_id: container.last_data_item_id,
-        last_owner_index: container.last_owner_index,
-        last_child_index: container.last_child_index,
-        last_data_type_index: container.last_data_type_index,
-        last_data_item_index: container.last_data_item_index,
-    });
+    if (container.event_create) {
+        event::emit(ContainerCreatedEvent {
+            object_id: container_id,
+            external_id: container.external_id,
+            owners: owner_addrs,
+            owners_active: 1,
+            name: container.name,
+            description: container.description,
+            content: container.content,
+            sequence_index: container.sequence_index,
+            public_update_container: container.public_update_container,
+            public_attach_container_child: container.public_attach_container_child,
+            public_create_data_type: container.public_create_data_type,
+            public_publish_data_item: container.public_publish_data_item,
+            last_owner_id: container.last_owner_id,
+            last_child_id: container.last_child_id,
+            last_data_type_id: container.last_data_type_id,
+            last_data_item_id: container.last_data_item_id,
+            last_owner_index: container.last_owner_index,
+            last_child_index: container.last_child_index,
+            last_data_type_index: container.last_data_type_index,
+            last_data_item_index: container.last_data_item_index,
+            event_create: container.event_create,
+            event_publish: container.event_publish,
+            event_attach: container.event_attach,
+            event_add: container.event_add,
+            event_remove: container.event_remove,
+            event_update: container.event_update,
+        });
+    };
 
     transfer::share_object(container);
 }
@@ -544,20 +581,21 @@ public entry fun create_data_type(
     container.last_data_type_index = next_index;
 
     // Emit full snapshot
-    event::emit(DataTypeCreatedEvent {
-        object_id: data_type_id,
-        container_id: object::id(container),
-        external_id: data_type.external_id,
-        name: data_type.name,
-        description: data_type.description,
-        content: data_type.content,
-        schemas: data_type.schemas,
-        sequence_index: data_type.sequence_index,
-        external_index: data_type.external_index,
-        last_data_item_id: data_type.last_data_item_id,
-        prev_id: data_type.prev_id,
-    });
-
+    if (container.event_create) {
+        event::emit(DataTypeCreatedEvent {
+            object_id: data_type_id,
+            container_id: object::id(container),
+            external_id: data_type.external_id,
+            name: data_type.name,
+            description: data_type.description,
+            content: data_type.content,
+            schemas: data_type.schemas,
+            sequence_index: data_type.sequence_index,
+            external_index: data_type.external_index,
+            last_data_item_id: data_type.last_data_item_id,
+            prev_id: data_type.prev_id,
+        });
+    };
     transfer::share_object(data_type);
 }
 
@@ -604,21 +642,22 @@ public entry fun publish_data_item(
     container.last_data_item_index = next_index;
 
     // Emit full snapshot
-    event::emit(DataItemPublishedEvent {
-        object_id: data_item_id,
-        container_id: object::id(container),
-        data_type_id: object::id(data_type),
-        external_id: data_item.external_id,
-        creator: data_item.creator,
-        name: data_item.name,
-        description: data_item.description,
-        content: data_item.content,
-        sequence_index: data_item.sequence_index,
-        external_index: data_item.external_index,
-        prev_id: data_item.prev_id,
-        prev_data_type_item_id: data_item.prev_data_type_item_id,
-    });
-
+    if (container.event_publish) {
+        event::emit(DataItemPublishedEvent {
+            object_id: data_item_id,
+            container_id: object::id(container),
+            data_type_id: object::id(data_type),
+            external_id: data_item.external_id,
+            creator: data_item.creator,
+            name: data_item.name,
+            description: data_item.description,
+            content: data_item.content,
+            sequence_index: data_item.sequence_index,
+            external_index: data_item.external_index,
+            prev_id: data_item.prev_id,
+            prev_data_type_item_id: data_item.prev_data_type_item_id,
+        });
+    };
     transfer::share_object(data_item);
 }
 
@@ -642,18 +681,20 @@ public entry fun update_container(
     container.content = new_content;
     container.external_id = new_external_id;
 
-    event::emit(ContainerUpdatedEvent {
-        object_id: object::id(container),
-        external_id: container.external_id,
-        name: container.name,
-        description: container.description,
-        content: container.content,
-        sequence_index: container.sequence_index,
-        public_update_container: container.public_update_container,
-        public_attach_container_child: container.public_attach_container_child,
-        public_create_data_type: container.public_create_data_type,
-        public_publish_data_item: container.public_publish_data_item,
-    });
+    if (container.event_update) {
+        event::emit(ContainerUpdatedEvent {
+            object_id: object::id(container),
+            external_id: container.external_id,
+            name: container.name,
+            description: container.description,
+            content: container.content,
+            sequence_index: container.sequence_index,
+            public_update_container: container.public_update_container,
+            public_attach_container_child: container.public_attach_container_child,
+            public_create_data_type: container.public_create_data_type,
+            public_publish_data_item: container.public_publish_data_item,
+        });
+    };
 }
 
 // Update data type
@@ -678,15 +719,17 @@ public entry fun update_data_type(
     data_type.schemas = new_schemas;
     data_type.external_index = new_external_index;
 
-    event::emit(DataTypeUpdatedEvent {
-        object_id: object::id(data_type),
-        container_id: data_type.container_id,
-        external_id: data_type.external_id,
-        name: data_type.name,
-        description: data_type.description,
-        content: data_type.content,
-        schemas: data_type.schemas,
-        sequence_index: data_type.sequence_index,
-        external_index: data_type.external_index,
-    });
+    if (container.event_update) {
+        event::emit(DataTypeUpdatedEvent {
+            object_id: object::id(data_type),
+            container_id: data_type.container_id,
+            external_id: data_type.external_id,
+            name: data_type.name,
+            description: data_type.description,
+            content: data_type.content,
+            schemas: data_type.schemas,
+            sequence_index: data_type.sequence_index,
+            external_index: data_type.external_index,
+        });
+    };
 }
