@@ -367,8 +367,8 @@ public entry fun remove_owner(
 /// CHILD CONTAINERS
 /// ==========================
 public entry fun attach_container_child(
-    parent_container: &mut Container,
-    child_container: &mut Container,
+    container_parent: &mut Container,
+    container_child: &mut Container,
     external_id: string::String,
     name: string::String,
     description: string::String,
@@ -377,18 +377,18 @@ public entry fun attach_container_child(
 ) {
     // Check ownership of both containers
     assert_owner(parent_container, parent_container.public_attach_container_child, ctx);
-    assert_owner(child_container, child_container.public_attach_container_child, ctx);
+    assert_owner(container_child, container_child.public_attach_container_child, ctx);
 
     // Ensure parent and child are not the same
-    assert!(object::id(parent_container) != object::id(child_container), 200);
+    assert!(object::id(parent_container) != object::id(container_child), 200);
 
     // Increment child index with wrapping
     let next_index = add_with_wrap(parent_container.last_child_index, 1);
 
-    let child_container_link = ContainerChildLink {
+    let container_child_link = ContainerChildLink {
         id: object::new(ctx),
         container_parent_id: object::id(parent_container),
-        container_child_id: object::id(child_container),
+        container_child_id: object::id(container_child),
         external_id: external_id,
         name: name,
         description: description,
@@ -397,25 +397,25 @@ public entry fun attach_container_child(
         prev_id: parent_container.last_child_id,
     };
 
-    let child_container_link_id = object::id(&child_container_link);
-    parent_container.last_child_id = option::some(child_container_link_id);
+    let container_child_link_id = object::id(&container_child_link);
+    parent_container.last_child_id = option::some(container_child_link_id);
     parent_container.last_child_index = next_index;
-    child_container.sequence_index = next_index;
+    container_child.sequence_index = next_index;
 
     // Emit full snapshot event
-    event::emit(ChildContainerLinkAttachedEvent {
-        id: object::id(&child_container_link),
+    event::emit(ContainerChildLinkAttachedEvent {
+        id: object::id(&container_child_link),
         parent_container_id: object::id(parent_container),
-        child_container_id: object::id(child_container),
-        external_id: child_container_link.external_id,
-        name: child_container_link.name,
-        description: child_container_link.description,
-        content: child_container_link.content,
-        sequence_index: child_container_link.sequence_index,
-        prev_id: child_container_link.prev_id,
+        container_child_id: object::id(container_child),
+        external_id: container_child_link.external_id,
+        name: container_child_link.name,
+        description: container_child_link.description,
+        content: container_child_link.content,
+        sequence_index: container_child_link.sequence_index,
+        prev_id: container_child_link.prev_id,
     });
 
-    transfer::share_object(child_container_link);
+    transfer::share_object(container_child_link);
 }
 
 /// ==========================
