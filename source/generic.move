@@ -29,6 +29,7 @@ public struct Container has key, store {
     id: UID,
     external_id: string::String,
     owners: vector<Owner>,
+    owners_active: u32,
     name: string::String,
     description: string::String,
     content: string::String,
@@ -56,7 +57,7 @@ public struct DataType has key, store {
     content: string::String,
     schemas: string::String,
     sequence_index: u128,
-    tag_index: u128,
+    external_index: u128,
     last_data_item_id: Option<ID>,
     prev_id: Option<ID>,
 }
@@ -71,7 +72,7 @@ public struct DataItem has key, store {
     description: string::String,
     content: string::String,
     sequence_index: u128,
-    tag_index: u128,
+    external_index: u128,
     prev_id: Option<ID>,
     prev_data_type_item_id: Option<ID>,
 }
@@ -95,6 +96,7 @@ public struct ContainerCreatedEvent has copy, drop {
     object_id: ID,
     external_id: string::String,
     owners: vector<string::String>, // addresses
+    owners_active: u32,
     name: string::String,
     description: string::String,
     content: string::String,
@@ -122,7 +124,7 @@ public struct DataTypeCreatedEvent has copy, drop {
     content: string::String,
     schemas: string::String,
     sequence_index: u128,
-    tag_index: u128,
+    external_index: u128,
     last_data_item_id: Option<ID>,
     prev_id: Option<ID>,
 }
@@ -137,7 +139,7 @@ public struct DataItemPublishedEvent has copy, drop {
     description: string::String,
     content: string::String,
     sequence_index: u128,
-    tag_index: u128,
+    external_index: u128,
     prev_id: Option<ID>,
     prev_data_type_item_id: Option<ID>,
 }
@@ -155,16 +157,20 @@ public struct ContainerChildLinkAttachedEvent has copy, drop {
 }
 
 public struct OwnerAddedEvent has copy, drop {
+    object_id: ID,
     container_id: ID,
-    owner_addr: string::String,
+    addr: string::String,
     role: string::String,
+    removed: bool,
     sequence_index: u128,
 }
 
 public struct OwnerRemovedEvent has copy, drop {
+    object_id: ID,
     container_id: ID,
-    owner_addr: string::String,
+    addr: string::String,
     role: string::String,
+    removed: bool,
     sequence_index: u128,
 }
 
@@ -189,7 +195,7 @@ public struct DataTypeUpdatedEvent has copy, drop {
     content: string::String,
     schemas: string::String,
     sequence_index: u128,
-    tag_index: u128,
+    external_index: u128,
 }
 
 /// ==========================
@@ -280,6 +286,7 @@ public entry fun add_owner(
             owner.removed = false;
             owner.role = role;
             owner.sequence_index = next_index;
+            container.owners_active = container.owners_active + 1;
             found = true;
             break;
         };
@@ -287,24 +294,29 @@ public entry fun add_owner(
     };
 
     if (!found) {
+        let owner = Owner {
+            id: object::new(ctx),
+            addr: owner_addr,
+            role,
+            removed: false,
+            sequence_index: next_index,
+        };
+        let owner_id = object::id(&owner);
+        let owner_removed = owner.removed;
         vector::push_back(
             &mut container.owners,
-            Owner {
-                id: object::new(ctx),
-                addr: owner_addr,
-                role,
-                removed: false,
-                sequence_index: next_index,
-            },
+            owner,
         );
+        container.owners_active = container.owners_active + 1;
+        event::emit(OwnerAddedEvent {
+            object_id: owner_id,
+            container_id: object::id(container),
+            addr: owner_addr,
+            role,
+            removed: owner_removed,
+            sequence_index: next_index,
+        });
     };
-
-    event::emit(OwnerAddedEvent {
-        container_id: object::id(container),
-        owner_addr,
-        role,
-        sequence_index: next_index,
-    });
 }
 
 const E_CANNOT_REMOVE_LAST_OWNER: u64 = 1002;
@@ -324,21 +336,9 @@ public entry fun remove_owner(
 
     let len = vector::length(&container.owners);
 
-    let mut active_count = 0;
+    assert!(container.owners_active > 1, E_CANNOT_REMOVE_LAST_OWNER);
+
     let mut i = 0;
-    while (i < len) {
-        let owner = vector::borrow(&container.owners, i);
-        if (!owner.removed) {
-            active_count = active_count + 1;
-        };
-        i = i + 1;
-    };
-    assert!(active_count > 1, E_CANNOT_REMOVE_LAST_OWNER);
-
-    // let next_index = add_with_wrap(container.last_owner_index, 1);
-    // container.last_owner_index = next_index;
-
-    i = 0;
     let mut found = false;
 
     while (i < len) {
@@ -346,12 +346,14 @@ public entry fun remove_owner(
         if (string_eq(&owner.addr, &target)) {
             assert!(!string_eq(&caller, &target), E_CANNOT_REMOVE_SELF);
             owner.removed = true;
-        //    owner.sequence_index = next_index;
+            container.owners_active = container.owners_active - 1;
             found = true;
             event::emit(OwnerRemovedEvent {
+                object_id: object::id(owner),
                 container_id: container_id,
-                owner_addr: target,
+                addr: target,
                 role: owner.role,
+                removed: owner.removed,
                 sequence_index: owner.sequence_index,
             });
             break;
@@ -360,7 +362,6 @@ public entry fun remove_owner(
     };
 
     assert!(found, E_OWNER_NOT_FOUND);
-
 }
 
 /// ==========================
@@ -376,36 +377,36 @@ public entry fun attach_container_child(
     ctx: &mut TxContext,
 ) {
     // Check ownership of both containers
-    assert_owner(parent_container, parent_container.public_attach_container_child, ctx);
+    assert_owner(container_parent, container_parent.public_attach_container_child, ctx);
     assert_owner(container_child, container_child.public_attach_container_child, ctx);
 
     // Ensure parent and child are not the same
-    assert!(object::id(parent_container) != object::id(container_child), 200);
+    assert!(object::id(container_parent) != object::id(container_child), 200);
 
     // Increment child index with wrapping
-    let next_index = add_with_wrap(parent_container.last_child_index, 1);
+    let next_index = add_with_wrap(container_parent.last_child_index, 1);
 
     let container_child_link = ContainerChildLink {
         id: object::new(ctx),
-        container_parent_id: object::id(parent_container),
+        container_parent_id: object::id(container_parent),
         container_child_id: object::id(container_child),
         external_id: external_id,
         name: name,
         description: description,
         content: content,
         sequence_index: next_index,
-        prev_id: parent_container.last_child_id,
+        prev_id: container_parent.last_child_id,
     };
 
     let container_child_link_id = object::id(&container_child_link);
-    parent_container.last_child_id = option::some(container_child_link_id);
-    parent_container.last_child_index = next_index;
+    container_parent.last_child_id = option::some(container_child_link_id);
+    container_parent.last_child_index = next_index;
     container_child.sequence_index = next_index;
 
     // Emit full snapshot event
     event::emit(ContainerChildLinkAttachedEvent {
         id: object::id(&container_child_link),
-        parent_container_id: object::id(parent_container),
+        container_parent_id: object::id(container_parent),
         container_child_id: object::id(container_child),
         external_id: container_child_link.external_id,
         name: container_child_link.name,
@@ -440,7 +441,7 @@ public entry fun create_container(
         addr: owner_addr,
         role: string::utf8(b"creator"),
         removed: false,
-        sequence_index: 0,
+        sequence_index: 1,
     };
 
     let owner_id = object::id(&owner);
@@ -449,11 +450,12 @@ public entry fun create_container(
     let container = Container {
         id: object::new(ctx),
         owners: vector::singleton(owner),
+        owners_active: 1,
         external_id,
         name,
         description,
         content,
-        sequence_index: 0,
+        sequence_index: 1,
         public_update_container,
         public_attach_container_child,
         public_create_data_type,
@@ -484,6 +486,7 @@ public entry fun create_container(
         object_id: container_id,
         external_id: container.external_id,
         owners: owner_addrs,
+        owners_active: 1,
         name: container.name,
         description: container.description,
         content: container.content,
@@ -515,7 +518,7 @@ public entry fun create_data_type(
     description: string::String,
     content: string::String,
     schemas: string::String,
-    tag_index: u128,
+    external_index: u128,
     ctx: &mut TxContext,
 ) {
     assert_owner(container, container.public_create_data_type, ctx);
@@ -531,11 +534,11 @@ public entry fun create_data_type(
         content: content,
         schemas: schemas,
         sequence_index: next_index,
-        tag_index: tag_index,
+        external_index: external_index,
         last_data_item_id: option::none(),
         prev_id: container.last_data_type_id,
     };
-    
+
     let data_type_id = object::id(&data_type);
     container.last_data_type_id = option::some(data_type_id);
     container.last_data_type_index = next_index;
@@ -550,7 +553,7 @@ public entry fun create_data_type(
         content: data_type.content,
         schemas: data_type.schemas,
         sequence_index: data_type.sequence_index,
-        tag_index: data_type.tag_index,
+        external_index: data_type.external_index,
         last_data_item_id: data_type.last_data_item_id,
         prev_id: data_type.prev_id,
     });
@@ -570,7 +573,7 @@ public entry fun publish_data_item(
     name: string::String,
     description: string::String,
     content: string::String,
-    tag_index: u128,
+    external_index: u128,
     ctx: &mut TxContext,
 ) {
     assert_owner(container, container.public_publish_data_item, ctx);
@@ -590,7 +593,7 @@ public entry fun publish_data_item(
         description,
         content,
         sequence_index: next_index,
-        tag_index,
+        external_index,
         prev_id: container.last_data_item_id,
         prev_data_type_item_id: data_type.last_data_item_id,
     };
@@ -611,7 +614,7 @@ public entry fun publish_data_item(
         description: data_item.description,
         content: data_item.content,
         sequence_index: data_item.sequence_index,
-        tag_index: data_item.tag_index,
+        external_index: data_item.external_index,
         prev_id: data_item.prev_id,
         prev_data_type_item_id: data_item.prev_data_type_item_id,
     });
@@ -662,7 +665,7 @@ public entry fun update_data_type(
     new_description: string::String,
     new_content: string::String,
     new_schemas: string::String,
-    new_tag_index: u128,
+    new_external_index: u128,
     ctx: &mut TxContext,
 ) {
     assert_owner(container, container.public_create_data_type, ctx);
@@ -673,7 +676,7 @@ public entry fun update_data_type(
     data_type.description = new_description;
     data_type.content = new_content;
     data_type.schemas = new_schemas;
-    data_type.tag_index = new_tag_index;
+    data_type.external_index = new_external_index;
 
     event::emit(DataTypeUpdatedEvent {
         object_id: object::id(data_type),
@@ -684,6 +687,6 @@ public entry fun update_data_type(
         content: data_type.content,
         schemas: data_type.schemas,
         sequence_index: data_type.sequence_index,
-        tag_index: data_type.tag_index,
+        external_index: data_type.external_index,
     });
 }
