@@ -34,7 +34,7 @@ public struct Owner has key, store {
 // ==========================
 public struct ContainerChain has key, store {
     id: UID,
-    sequence_index: u128,
+    sequence_index_counter: u128,
     last_container_id: Option<ID>,
 }
 
@@ -231,7 +231,7 @@ public struct DataTypeUpdatedEvent has copy, drop {
 fun init(ctx: &mut TxContext) {
     let chain = ContainerChain {
         id: object::new(ctx),
-        sequence_index: 0,
+        sequence_index_counter: 0,
         last_container_id: option::none<ID>(),
     };
 
@@ -553,7 +553,7 @@ public entry fun create_container(
     let container_id = object::id(&container);
 
     // update container chain
-    container_chain.sequence_index = add_with_wrap(container_chain.sequence_index, 1);
+    container_chain.sequence_index_counter = add_with_wrap(container_chain.sequence_index_counter, 1);
     container_chain.last_container_id = option::some(container_id);
 
     // --- Emit full snapshot event ---
