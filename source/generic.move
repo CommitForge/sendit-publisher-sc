@@ -52,7 +52,12 @@ public struct Container has key, store {
     name: string::String,
     description: string::String,
     content: string::String,
+    version: string::String,
+    schemas: string::String,
+    apis: string::String,
+    resources: string::String,
     sequence_index: u128,
+    external_index: u128,
     public_update_container: bool,
     public_attach_container_child: bool,
     public_create_data_type: bool,
@@ -83,7 +88,10 @@ public struct DataType has key, store {
     name: string::String,
     description: string::String,
     content: string::String,
+    version: string::String,
     schemas: string::String,
+    apis: string::String,
+    resources: string::String,
     sequence_index: u128,
     external_index: u128,
     last_data_item_id: Option<ID>,
@@ -133,7 +141,12 @@ public struct ContainerCreatedEvent has copy, drop {
     name: string::String,
     description: string::String,
     content: string::String,
+    version: string::String,
+    schemas: string::String,
+    apis: string::String,
+    resources: string::String,
     sequence_index: u128,
+    external_index: u128,
     public_update_container: bool,
     public_attach_container_child: bool,
     public_create_data_type: bool,
@@ -164,7 +177,10 @@ public struct DataTypeCreatedEvent has copy, drop {
     name: string::String,
     description: string::String,
     content: string::String,
+    version: string::String,
     schemas: string::String,
+    apis: string::String,
+    resources: string::String,
     sequence_index: u128,
     external_index: u128,
     last_data_item_id: Option<ID>,
@@ -233,7 +249,12 @@ public struct ContainerUpdatedEvent has copy, drop {
     name: string::String,
     description: string::String,
     content: string::String,
+    version: string::String,
+    schemas: string::String,
+    apis: string::String,
+    resources: string::String,
     sequence_index: u128,
+    external_index: u128,
     public_update_container: bool,
     public_attach_container_child: bool,
     public_create_data_type: bool,
@@ -249,7 +270,10 @@ public struct DataTypeUpdatedEvent has copy, drop {
     name: string::String,
     description: string::String,
     content: string::String,
+    version: string::String,
     schemas: string::String,
+    apis: string::String,
+    resources: string::String,
     sequence_index: u128,
     external_index: u128,
 }
@@ -541,6 +565,11 @@ public entry fun create_container(
     name: string::String,
     description: string::String,
     content: string::String,
+    version: string::String,
+    schemas: string::String,
+    apis: string::String,
+    resources: string::String,
+    external_index: u128,
     public_update_container: bool,
     public_attach_container_child: bool,
     public_create_data_type: bool,
@@ -583,7 +612,12 @@ public entry fun create_container(
         name: name,
         description: description,
         content: content,
+        version: version,
+        schemas: schemas,
+        apis: apis,
+        resources: resources,
         sequence_index: 1,
+        external_index: external_index,
         public_update_container: public_update_container,
         public_attach_container_child: public_attach_container_child,
         public_create_data_type: public_create_data_type,
@@ -638,7 +672,12 @@ public entry fun create_container(
             name: container.name,
             description: container.description,
             content: container.content,
+            version: container.version,
+            schemas: container.schemas,
+            apis: container.apis,
+            resources: container.resources,
             sequence_index: container.sequence_index,
+            external_index: container.external_index,
             public_update_container: container.public_update_container,
             public_attach_container_child: container.public_attach_container_child,
             public_create_data_type: container.public_create_data_type,
@@ -673,7 +712,10 @@ public entry fun create_data_type(
     name: string::String,
     description: string::String,
     content: string::String,
+    version: string::String,
     schemas: string::String,
+    apis: string::String,
+    resources: string::String,
     external_index: u128,
     clock: &Clock,
     ctx: &mut TxContext,
@@ -693,7 +735,10 @@ public entry fun create_data_type(
         name: name,
         description: description,
         content: content,
+        version: version,
         schemas: schemas,
+        apis: apis,
+        resources: resources,
         sequence_index: next_index,
         external_index: external_index,
         last_data_item_id: option::none(),
@@ -715,7 +760,10 @@ public entry fun create_data_type(
             name: data_type.name,
             description: data_type.description,
             content: data_type.content,
+            version: data_type.version,
             schemas: data_type.schemas,
+            apis: data_type.apis,
+            resources: data_type.resources,
             sequence_index: data_type.sequence_index,
             external_index: data_type.external_index,
             last_data_item_id: data_type.last_data_item_id,
@@ -801,6 +849,11 @@ public entry fun update_container(
     new_name: string::String,
     new_description: string::String,
     new_content: string::String,
+    new_version: string::String,
+    new_schemas: string::String,
+    new_apis: string::String,
+    new_resources: string::String,
+    new_external_index: u128,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
@@ -813,6 +866,11 @@ public entry fun update_container(
     container.name = new_name;
     container.description = new_description;
     container.content = new_content;
+    container.version = new_version;
+    container.schemas = new_schemas;
+    container.apis = new_apis;
+    container.resources = new_resources;
+    container.external_index = new_external_index;
 
     if (container.event_update) {
         event::emit(ContainerUpdatedEvent {
@@ -823,7 +881,12 @@ public entry fun update_container(
             name: container.name,
             description: container.description,
             content: container.content,
+            version: container.version,
+            schemas: container.schemas,
+            apis: container.apis,
+            resources: container.resources,
             sequence_index: container.sequence_index,
+            external_index: container.external_index,
             public_update_container: container.public_update_container,
             public_attach_container_child: container.public_attach_container_child,
             public_create_data_type: container.public_create_data_type,
@@ -840,7 +903,10 @@ public entry fun update_data_type(
     new_name: string::String,
     new_description: string::String,
     new_content: string::String,
+    new_version: string::String,
     new_schemas: string::String,
+    new_apis: string::String,
+    new_resources: string::String,
     new_external_index: u128,
     clock: &Clock,
     ctx: &mut TxContext,
@@ -855,7 +921,10 @@ public entry fun update_data_type(
     data_type.name = new_name;
     data_type.description = new_description;
     data_type.content = new_content;
+    data_type.version = new_version;
     data_type.schemas = new_schemas;
+    data_type.apis = new_apis;
+    data_type.resources = new_resources;
     data_type.external_index = new_external_index;
 
     if (container.event_update) {
@@ -868,7 +937,10 @@ public entry fun update_data_type(
             name: data_type.name,
             description: data_type.description,
             content: data_type.content,
+            version: data_type.version,
             schemas: data_type.schemas,
+            apis: data_type.apis,
+            resources: data_type.resources,
             sequence_index: data_type.sequence_index,
             external_index: data_type.external_index,
         });
