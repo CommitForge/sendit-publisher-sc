@@ -47,7 +47,7 @@ public struct Container has key, store {
     creator_addr: string::String,
     creator_timestamp_ms: u64,
     owners: vector<Owner>,
-    owners_active: u32,
+    owners_active_count: u32,
     name: string::String,
     description: string::String,
     content: string::String,
@@ -128,7 +128,7 @@ public struct ContainerCreatedEvent has copy, drop {
     creator_addr: string::String,
     creator_timestamp_ms: u64,
     owners: vector<string::String>, // addresses
-    owners_active: u32,
+    owners_active_count: u32,
     name: string::String,
     description: string::String,
     content: string::String,
@@ -351,7 +351,7 @@ public entry fun add_owner(
             let was_removed = owner.removed;
             if (was_removed) {
                 owner.removed = false;
-                container.owners_active = container.owners_active + 1;
+                container.owners_active_count = container.owners_active_count + 1;
             };
 
             owner.role = role;
@@ -395,7 +395,7 @@ public entry fun add_owner(
         let owner_removed = owner.removed;
         let owner_prev_id = owner.prev_id;
         container.last_owner_id = option::some(owner_id);
-        container.owners_active = container.owners_active + 1;
+        container.owners_active_count = container.owners_active_count + 1;
 
         vector::push_back(
             &mut container.owners,
@@ -425,7 +425,7 @@ public entry fun remove_owner(
     ctx: &TxContext,
 ) {
     assert_owner(container, container.public_update_container, ctx);
-    assert!(container.owners_active > 1, E_CANNOT_REMOVE_LAST_OWNER);
+    assert!(container.owners_active_count > 1, E_CANNOT_REMOVE_LAST_OWNER);
 
     let container_id = object::id(container);
     let caller_addr = make_owner_addr(address::to_string(sender(ctx)));
@@ -444,7 +444,7 @@ public entry fun remove_owner(
                 abort E_OWNER_NOT_FOUND;
             };
             owner.removed = true;
-            container.owners_active = container.owners_active - 1;
+            container.owners_active_count = container.owners_active_count - 1;
             found = true;
             if (container.event_remove) {
                 event::emit(OwnerRemovedEvent {
@@ -575,7 +575,7 @@ public entry fun create_container(
     let container = Container {
         id: object::new(ctx),
         owners: vector::singleton(owner),
-        owners_active: 1,
+        owners_active_count: 1,
         external_id: external_id,
         creator_addr: creator_addr,
         creator_timestamp_ms: creator_timestamp_ms,
@@ -633,7 +633,7 @@ public entry fun create_container(
             creator_addr: creator_addr,
             creator_timestamp_ms: creator_timestamp_ms,
             owners: owner_addrs,
-            owners_active: 1,
+            owners_active_count: 1,
             name: container.name,
             description: container.description,
             content: container.content,
