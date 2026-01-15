@@ -17,6 +17,7 @@ const E_INVALID_DATATYPE: u64 = 1001;
 const E_CANNOT_REMOVE_LAST_OWNER: u64 = 1002;
 const E_CANNOT_REMOVE_SELF: u64 = 1003;
 const E_OWNER_NOT_FOUND: u64 = 1004;
+const E_NO_ACTIVE_OWNERS: u64 = 1005;
 
 // ==========================
 // OWNERS
@@ -264,7 +265,7 @@ fun init(ctx: &mut TxContext) {
 }
 
 // ==========================
-// STRING HELPERS
+// STRING AND NUMBER HELPERS
 // ==========================
 fun string_eq(a: &string::String, b: &string::String): bool {
     let ba = string::bytes(a);
@@ -286,6 +287,22 @@ fun string_eq(a: &string::String, b: &string::String): bool {
     true
 }
 
+fun make_owner_addr(addr: string::String): string::String {
+    /// let mut s = string::utf8(b"addr:"); // create mutable string
+    /// string::append(&mut s, addr); // append owned string
+    /// s // return the result
+    addr
+}
+
+public fun add_with_wrap(val: u128, add: u128): u128 {
+    let sum = val + add;
+    if (sum > MAX_u128) {
+        1
+    } else {
+        sum
+    }
+}
+
 // ==========================
 // AUTHORIZATION HELPERS
 // ==========================
@@ -305,22 +322,6 @@ fun assert_owner(container: &Container, asserted: bool, ctx: &TxContext) {
 
         // If we get here, no owner matched
         abort E_NOT_OWNER;
-    }
-}
-
-fun make_owner_addr(addr: string::String): string::String {
-    /// let mut s = string::utf8(b"addr:"); // create mutable string
-    /// string::append(&mut s, addr); // append owned string
-    /// s // return the result
-    addr
-}
-
-public fun add_with_wrap(val: u128, add: u128): u128 {
-    let sum = val + add;
-    if (sum > MAX_u128) {
-        1
-    } else {
-        sum
     }
 }
 
@@ -872,4 +873,26 @@ public entry fun update_data_type(
             external_index: data_type.external_index,
         });
     };
+}
+
+public entry fun update_owners_active_count(container: &mut Container, ctx: &TxContext) {
+    // Same permission rule as add/remove owner
+    assert_owner(container, container.public_update_container, ctx);
+
+    let len = vector::length(&container.owners);
+    let mut i = 0;
+    let mut active: u32 = 0;
+
+    while (i < len) {
+        let owner = vector::borrow(&container.owners, i);
+        if (!owner.removed) {
+            active = active + 1;
+        };
+        i = i + 1;
+    };
+
+    // Defensive invariant
+    assert!(active > 0, E_NO_ACTIVE_OWNERS);
+
+    container.owners_active_count = active;
 }
