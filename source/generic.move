@@ -41,6 +41,20 @@ public struct ContainerChain has key, store {
     sequence_index_counter: u128,
     last_container_id: Option<ID>,
 }
+public struct ContainerSpecEvent has copy, drop {
+        id: ID,
+    version: string::String,
+    schemas: string::String,
+    apis: string::String,
+    resources: string::String,
+}
+public struct ContainerSpec has key, store {
+        id: UID,
+    version: string::String,
+    schemas: string::String,
+    apis: string::String,
+    resources: string::String,
+}
 
 public struct Container has key, store {
     id: UID,
@@ -52,10 +66,7 @@ public struct Container has key, store {
     name: string::String,
     description: string::String,
     content: string::String,
-    version: string::String,
-    schemas: string::String,
-    apis: string::String,
-    resources: string::String,
+    specification: ContainerSpec,
     sequence_index: u128,
     external_index: u128,
     public_update_container: bool,
@@ -141,10 +152,7 @@ public struct ContainerCreatedEvent has copy, drop {
     name: string::String,
     description: string::String,
     content: string::String,
-    version: string::String,
-    schemas: string::String,
-    apis: string::String,
-    resources: string::String,
+    specification: ContainerSpecEvent,
     sequence_index: u128,
     external_index: u128,
     public_update_container: bool,
@@ -601,6 +609,14 @@ public entry fun create_container(
 
     let owner_id = object::id(&owner);
 
+    let specification = ContainerSpec {
+        id: object::new(ctx),
+                version: version,
+        schemas: schemas,
+        apis: apis,
+        resources: resources,
+    };
+
     // Create container
     let container = Container {
         id: object::new(ctx),
@@ -612,10 +628,7 @@ public entry fun create_container(
         name: name,
         description: description,
         content: content,
-        version: version,
-        schemas: schemas,
-        apis: apis,
-        resources: resources,
+        specification,
         sequence_index: 1,
         external_index: external_index,
         public_update_container: public_update_container,
@@ -662,6 +675,14 @@ public entry fun create_container(
     };
 
     if (container.event_create) {
+            let specification_event = ContainerSpecEvent {
+        id: object::id(&specification),
+                version: version,
+        schemas: schemas,
+        apis: apis,
+        resources: resources,
+    };
+
         event::emit(ContainerCreatedEvent {
             object_id: container_id,
             external_id: container.external_id,
@@ -672,10 +693,7 @@ public entry fun create_container(
             name: container.name,
             description: container.description,
             content: container.content,
-            version: container.version,
-            schemas: container.schemas,
-            apis: container.apis,
-            resources: container.resources,
+            specification: specification_event,
             sequence_index: container.sequence_index,
             external_index: container.external_index,
             public_update_container: container.public_update_container,
@@ -861,16 +879,25 @@ public entry fun update_container(
 
     let creator_addr = address::to_string(sender(ctx));
     let creator_timestamp_ms = clock.timestamp_ms();
+    
+    let specification = ContainerSpec {
+        id: object::new(ctx),
+                version: new_version,
+        schemas: new_schemas,
+        apis: new_apis,
+        resources: new_resources,
+    };
 
     container.external_id = new_external_id;
     container.name = new_name;
     container.description = new_description;
     container.content = new_content;
-    container.version = new_version;
-    container.schemas = new_schemas;
-    container.apis = new_apis;
-    container.resources = new_resources;
-    container.external_index = new_external_index;
+    
+    let spec_ref = &mut container.specification;
+    spec_ref.version = new_version;
+spec_ref.schemas = new_schemas;
+spec_ref.apis = new_apis;
+spec_ref.resources =new_resources;
 
     if (container.event_update) {
         event::emit(ContainerUpdatedEvent {
@@ -881,10 +908,7 @@ public entry fun update_container(
             name: container.name,
             description: container.description,
             content: container.content,
-            version: container.version,
-            schemas: container.schemas,
-            apis: container.apis,
-            resources: container.resources,
+            specification: ;
             sequence_index: container.sequence_index,
             external_index: container.external_index,
             public_update_container: container.public_update_container,
