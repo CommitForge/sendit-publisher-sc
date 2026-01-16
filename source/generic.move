@@ -32,6 +32,12 @@ public struct ContainerChain has key, store {
     last_container_id: Option<ID>,
 }
 
+public struct UpdateChain has key, store {
+    id: UID,
+    sequence_index_counter: u128,
+    last_update_record_id: Option<ID>,
+}
+
 // ==========================
 // COMMONS
 // ==========================
@@ -177,6 +183,17 @@ public struct Owner has key, store {
     prev_id: Option<ID>,
 }
 
+public struct UpdateRecord has key, store {
+    id: UID,
+    object_id: ID,
+    creator: Creator,
+    object_type: string::String,
+    // 1 - CREATE, 2 - UPDATE
+    action: u8,
+    sequence_index: u128,
+    prev_id: Option<ID>,
+}
+
 // ==========================
 // EVENTS (FULL OBJECT SNAPSHOT)
 // ==========================
@@ -313,13 +330,21 @@ public struct ContainerLinkUpdatedEvent has copy, drop {
 // INIT
 // ==========================
 fun init(ctx: &mut TxContext) {
-    let chain = ContainerChain {
+    let container_chain = ContainerChain {
         id: object::new(ctx),
         sequence_index_counter: 0,
         last_container_id: option::none<ID>(),
     };
 
-    transfer::share_object(chain);
+    transfer::share_object(container_chain);
+
+    let update_chain = UpdateChain {
+        id: object::new(ctx),
+        sequence_index_counter: 0,
+        last_update_record_id: option::none<ID>(),
+    };
+
+    transfer::share_object(update_chain);
 }
 
 // ==========================
@@ -327,6 +352,7 @@ fun init(ctx: &mut TxContext) {
 // ==========================
 public entry fun create_container(
     container_chain: &mut ContainerChain,
+    update_chain: &mut UpdateChain,
     external_id: string::String,
     name: string::String,
     description: string::String,
@@ -528,6 +554,14 @@ public entry fun create_container(
         });
     };
 
+    create_update_record(
+        update_chain,
+        object::id(&container),
+        &container.creator,
+        string::utf8(b"container"),
+        1,
+        ctx,
+    );
     transfer::share_object(container);
 }
 
@@ -535,6 +569,7 @@ public entry fun create_container(
 // DATA TYPE
 // ==========================
 public entry fun create_data_type(
+    update_chain: &mut UpdateChain,
     container: &mut Container,
     external_id: string::String,
     name: string::String,
@@ -620,6 +655,14 @@ public entry fun create_data_type(
         });
     };
 
+    create_update_record(
+        update_chain,
+        object::id(&data_type),
+        &data_type.creator,
+        string::utf8(b"data_type"),
+        1,
+        ctx,
+    );
     transfer::share_object(data_type);
 }
 
@@ -704,6 +747,7 @@ public entry fun publish_data_item(
 // CHILD CONTAINERS
 // ==========================
 public entry fun attach_container_child(
+    update_chain: &mut UpdateChain,
     container_parent: &mut Container,
     container_child: &mut Container,
     external_id: string::String,
@@ -783,7 +827,14 @@ public entry fun attach_container_child(
         });
     };
 
-    // Share object to allow other modules access
+    create_update_record(
+        update_chain,
+        object::id(&container_child_link),
+        &container_child_link.creator,
+        string::utf8(b"container_child_link"),
+        1,
+        ctx,
+    );
     transfer::share_object(container_child_link);
 }
 
@@ -791,6 +842,7 @@ public entry fun attach_container_child(
 // CONTAINER OWNER MANAGEMENT
 // ==========================
 public entry fun add_owner(
+    update_chain: &mut UpdateChain,
     container: &mut Container,
     new_owner: string::String,
     role: string::String,
@@ -849,6 +901,16 @@ public entry fun add_owner(
                 });
             };
 
+            // Create UpdateRecord for this owner (RE-ACTIVATED → action = 2)
+            create_update_record(
+                update_chain,
+                object::id(owner),
+                &owner.creator,
+                string::utf8(b"owner"),
+                2,
+                ctx,
+            );
+
             break;
         };
 
@@ -856,7 +918,7 @@ public entry fun add_owner(
     };
 
     if (!found) {
-        // New owner
+        // New owner → CREATE
         let next_index = add_with_wrap(container.last_owner_index, 1);
         container.last_owner_index = next_index;
 
@@ -881,6 +943,15 @@ public entry fun add_owner(
         container.last_owner_id = option::some(owner_id);
         container.owners_active_count = container.owners_active_count + 1;
 
+        // UpdateRecord for newly created owner → action = 1
+        create_update_record(
+            update_chain,
+            owner_id,
+            &owner.creator,
+            string::utf8(b"owner"),
+            1,
+            ctx,
+        );
         vector::push_back(&mut container.owners, owner);
 
         if (event_config_ref.event_add) {
@@ -901,15 +972,26 @@ public entry fun add_owner(
                 sequence_index: next_index,
                 prev_id: container.last_owner_id, // prev_id before push
             });
-        }
-    }
+        };
+    };
+
+    // Create UpdateRecord for the container itself
+    create_update_record(
+        update_chain,
+        container_id,
+        &container.creator,
+        string::utf8(b"container"),
+        2,
+        ctx,
+    );
 }
 
 public entry fun remove_owner(
+    update_chain: &mut UpdateChain,
     container: &mut Container,
     owner_addr_remove: string::String,
     clock: &Clock,
-    ctx: &TxContext,
+    ctx: &mut TxContext,
 ) {
     let permission_ref = &container.permission;
     let event_config_ref = &container.event_config;
@@ -964,6 +1046,16 @@ public entry fun remove_owner(
                 });
             };
 
+            // Create UpdateRecord for owner → action = 2
+            create_update_record(
+                update_chain,
+                object::id(owner),
+                &owner.creator,
+                string::utf8(b"owner"),
+                2,
+                ctx,
+            );
+
             break;
         };
 
@@ -971,13 +1063,23 @@ public entry fun remove_owner(
     };
 
     assert!(found, E_OWNER_NOT_FOUND);
+
+    // Create an UpdateRecord for the container itself
+    create_update_record(
+        update_chain,
+        container_id,
+        &container.creator,
+        string::utf8(b"container"),
+        2,
+        ctx,
+    );
 }
 
 // ==========================
 // UPDATE METHODS
 // ==========================
-// update container
 public entry fun update_container(
+    update_chain: &mut UpdateChain,
     container: &mut Container,
     new_external_id: string::String,
     new_name: string::String,
@@ -1014,6 +1116,7 @@ public entry fun update_container(
     spec_ref.resources = new_resources;
     container.external_index = new_external_index;
 
+    // Emit event
     if (event_config_ref.event_update) {
         let specification_event = SpecificationEvent {
             version: new_version,
@@ -1041,10 +1144,20 @@ public entry fun update_container(
             external_index: container.external_index,
         });
     };
+
+    // Create UpdateRecord for container
+    create_update_record(
+        update_chain,
+        object::id(container),
+        &container.creator,
+        string::utf8(b"container"),
+        2,
+        ctx,
+    );
 }
 
-// update data type
 public entry fun update_data_type(
+    update_chain: &mut UpdateChain,
     container: &mut Container,
     data_type: &mut DataType,
     new_external_id: string::String,
@@ -1064,7 +1177,6 @@ public entry fun update_data_type(
     assert_owner(container, permission_ref.public_create_data_type, ctx);
     assert!(data_type.container_id == object::id(container), E_INVALID_DATATYPE);
 
-    // Who is performing the update
     let updater_addr = address::to_string(sender(ctx));
     let updater_timestamp_ms = clock.timestamp_ms();
 
@@ -1074,7 +1186,6 @@ public entry fun update_data_type(
 
     let spec_ref = &mut data_type.specification;
 
-    // Update data type fields
     data_type.external_id = new_external_id;
     data_type.name = new_name;
     data_type.description = new_description;
@@ -1085,7 +1196,7 @@ public entry fun update_data_type(
     spec_ref.resources = new_resources;
     data_type.external_index = new_external_index;
 
-    // Emit event including both creator and updater
+    // Emit event
     if (event_config_ref.event_update) {
         let specification_event = SpecificationEvent {
             version: new_version,
@@ -1114,10 +1225,20 @@ public entry fun update_data_type(
             external_index: data_type.external_index,
         });
     };
+
+    // Create UpdateRecord for data type
+    create_update_record(
+        update_chain,
+        object::id(data_type),
+        &data_type.creator,
+        string::utf8(b"data_type"),
+        2,
+        ctx,
+    );
 }
 
-// update container child link
 public entry fun update_container_child_link(
+    update_chain: &mut UpdateChain,
     container_child_link: &mut ContainerChildLink,
     container_parent: &mut Container,
     container_child: &mut Container,
@@ -1135,11 +1256,9 @@ public entry fun update_container_child_link(
     let parent_permission_ref = &container_parent.permission;
     let child_permission_ref = &container_child.permission;
 
-    // Same rules as attach
     assert_owner(container_parent, parent_permission_ref.public_attach_container_child, ctx);
     assert_owner(container_child, child_permission_ref.public_attach_container_child, ctx);
 
-    // Who is performing the update
     let updater_addr = address::to_string(sender(ctx));
     let updater_timestamp_ms = clock.timestamp_ms();
 
@@ -1147,14 +1266,13 @@ public entry fun update_container_child_link(
     container_child_link.creator.creator_update_addr = updater_addr;
     container_child_link.creator.creator_update_timestamp_ms = updater_timestamp_ms;
 
-    // Update the main fields
     container_child_link.external_id = new_external_id;
     container_child_link.name = new_name;
     container_child_link.description = new_description;
     container_child_link.content = new_content;
     container_child_link.external_index = new_external_index;
 
-    // Emit event including both creator and updater
+    // Emit event
     if (container_parent.event_config.event_update) {
         let creator_event = CreatorEvent {
             creator_addr: container_child_link.creator.creator_addr,
@@ -1176,10 +1294,23 @@ public entry fun update_container_child_link(
             external_index: container_child_link.external_index,
         });
     };
+
+    // Create UpdateRecord for container child link
+    create_update_record(
+        update_chain,
+        object::id(container_child_link),
+        &container_child_link.creator,
+        string::utf8(b"container_child_link"),
+        2,
+        ctx,
+    );
 }
 
-// update container owners active count
-public entry fun update_container_owners_active_count(container: &mut Container, ctx: &TxContext) {
+public entry fun update_container_owners_active_count(
+    update_chain: &mut UpdateChain,
+    container: &mut Container,
+    ctx: &mut TxContext,
+) {
     let permission_ref = &container.permission;
     assert_owner(container, permission_ref.public_update_container, ctx);
 
@@ -1199,6 +1330,49 @@ public entry fun update_container_owners_active_count(container: &mut Container,
     assert!(active > 0, E_NO_ACTIVE_OWNERS);
 
     container.owners_active_count = active;
+
+    // Create UpdateRecord for the container itself
+    create_update_record(
+        update_chain,
+        object::id(container),
+        &container.creator,
+        string::utf8(b"container"),
+        2,
+        ctx,
+    );
+}
+
+fun create_update_record(
+    update_chain: &mut UpdateChain,
+    object_id: ID,
+    creator: &Creator,
+    object_type: string::String,
+    action: u8, // 1 = CREATE, 2 = UPDATE
+    ctx: &mut TxContext,
+) {
+    let next_index = add_with_wrap(update_chain.sequence_index_counter, 1);
+    update_chain.sequence_index_counter = next_index;
+
+    // Copy creator fields manually
+    let creator_copy = Creator {
+        creator_addr: creator.creator_addr,
+        creator_update_addr: creator.creator_update_addr,
+        creator_timestamp_ms: creator.creator_timestamp_ms,
+        creator_update_timestamp_ms: creator.creator_update_timestamp_ms,
+    };
+
+    let record = UpdateRecord {
+        id: object::new(ctx),
+        object_id: object_id,
+        creator: creator_copy,
+        object_type: object_type,
+        action: action,
+        sequence_index: next_index,
+        prev_id: update_chain.last_update_record_id,
+    };
+
+    update_chain.last_update_record_id = option::some(object::id(&record));
+    transfer::share_object(record);
 }
 
 // ==========================
