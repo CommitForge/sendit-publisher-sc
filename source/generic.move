@@ -1,11 +1,13 @@
 module sendit_messenger::generic_store;
 
-use iota::address;
+use iota::tx_context::{TxContext, sender};
+use iota::object::{Self, UID, ID};
+
 use iota::clock::Clock;
 use iota::event;
-use iota::object::{Self, UID, ID};
 use iota::transfer;
-use iota::tx_context::{TxContext, sender};
+use iota::address;
+
 use std::string;
 use std::vector;
 
