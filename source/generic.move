@@ -154,6 +154,7 @@ public struct ContainerChildLink has key, store {
     description: string::String,
     content: string::String,
     sequence_index: u128,
+    external_index: u128,
     prev_id: Option<ID>,
 }
 
@@ -240,6 +241,7 @@ public struct ContainerChildLinkAttachedEvent has copy, drop {
     description: string::String,
     content: string::String,
     sequence_index: u128,
+    external_index: u128,
     prev_id: Option<ID>,
 }
 
@@ -629,6 +631,7 @@ public entry fun attach_container_child(
     name: string::String,
     description: string::String,
     content: string::String,
+    external_index: u128,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
@@ -657,6 +660,7 @@ public entry fun attach_container_child(
         description: description,
         content: content,
         sequence_index: next_index,
+        external_index: external_index,
         prev_id: container_parent.last_container_child_id,
     };
 
@@ -677,6 +681,7 @@ public entry fun attach_container_child(
             description: container_child_link.description,
             content: container_child_link.content,
             sequence_index: container_child_link.sequence_index,
+            external_index: container_child_link.external_index,
             prev_id: container_child_link.prev_id,
         });
     };
