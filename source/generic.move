@@ -420,7 +420,7 @@ public entry fun create_container(
         event_config: container_event_config,
         sequence_index: 1,
         external_index: external_index,
-        last_owner_index: 0,
+        last_owner_index: 1,
         last_container_child_index: 0,
         last_data_type_index: 0,
         last_data_item_index: 0,
