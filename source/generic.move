@@ -38,6 +38,12 @@ public struct UpdateChain has key, store {
     last_update_record_id: Option<ID>,
 }
 
+public struct DataItemChain has key, store {
+    id: UID,
+    sequence_index_counter: u128,
+    last_data_item_id: Option<ID>,
+}
+
 // ==========================
 // COMMONS
 // ==========================
@@ -126,7 +132,7 @@ public struct Container has key, store {
     last_container_child_id: Option<ID>,
     last_data_type_id: Option<ID>,
     last_data_item_id: Option<ID>,
-    prev_id: Option<ID>,
+    prev_container_chain_id: Option<ID>,
 }
 
 public struct DataType has key, store {
@@ -155,6 +161,7 @@ public struct DataItem has key, store {
     content: string::String,
     sequence_index: u128,
     external_index: u128,
+    prev_data_item_chain_id: Option<ID>,
     prev_id: Option<ID>,
     prev_data_type_item_id: Option<ID>,
 }
@@ -219,7 +226,7 @@ public struct ContainerCreatedEvent has copy, drop {
     last_container_child_id: Option<ID>,
     last_data_type_id: Option<ID>,
     last_data_item_id: Option<ID>,
-    prev_id: Option<ID>,
+    prev_container_chain_id: Option<ID>,
 }
 
 public struct DataTypeCreatedEvent has copy, drop {
@@ -248,6 +255,7 @@ public struct DataItemPublishedEvent has copy, drop {
     content: string::String,
     sequence_index: u128,
     external_index: u128,
+    prev_data_item_chain_id: Option<ID>,
     prev_id: Option<ID>,
     prev_data_type_item_id: Option<ID>,
 }
@@ -345,6 +353,14 @@ fun init(ctx: &mut TxContext) {
     };
 
     transfer::share_object(update_chain);
+
+    let data_item_chain = DataItemChain {
+        id: object::new(ctx),
+        sequence_index_counter: 0,
+        last_data_item_id: option::none<ID>(),
+    };
+
+    transfer::share_object(data_item_chain);
 }
 
 // ==========================
@@ -431,6 +447,8 @@ public entry fun create_container(
         creator_update_timestamp_ms: creator_timestamp_ms,
     };
 
+    let last_container_id = container_chain.last_container_id;
+
     // Container object
     let container = Container {
         id: object::new(ctx),
@@ -454,7 +472,7 @@ public entry fun create_container(
         last_container_child_id: option::none(),
         last_data_type_id: option::none(),
         last_data_item_id: option::none(),
-        prev_id: container_chain.last_container_id,
+        prev_container_chain_id: last_container_id,
     };
 
     let container_id = object::id(&container);
@@ -530,7 +548,7 @@ public entry fun create_container(
             last_container_child_id: container.last_container_child_id,
             last_data_type_id: container.last_data_type_id,
             last_data_item_id: container.last_data_item_id,
-            prev_id: container.prev_id,
+            prev_container_chain_id: last_container_id,
         });
     };
 
@@ -670,6 +688,7 @@ public entry fun create_data_type(
 // DATA ITEM
 // ==========================
 public entry fun publish_data_item(
+    data_item_chain: &mut DataItemChain,
     container: &mut Container,
     data_type: &mut DataType,
     external_id: string::String,
@@ -696,6 +715,8 @@ public entry fun publish_data_item(
         creator_update_timestamp_ms: creator_timestamp_ms,
     };
 
+    let data_item_chain_id = data_item_chain.last_data_item_id;
+
     let data_item = DataItem {
         id: object::new(ctx),
         container_id: object::id(container),
@@ -707,11 +728,18 @@ public entry fun publish_data_item(
         content: content,
         sequence_index: next_index,
         external_index: external_index,
+        prev_data_item_chain_id: data_item_chain_id,
         prev_id: container.last_data_item_id,
         prev_data_type_item_id: data_type.last_data_item_id,
     };
 
     let data_item_id = object::id(&data_item);
+
+    // Update chain
+    data_item_chain.sequence_index_counter =
+        add_with_wrap(data_item_chain.sequence_index_counter, 1);
+    data_item_chain.last_data_item_id = option::some(data_item_id);
+
     data_type.last_data_item_id = option::some(data_item_id);
     container.last_data_item_id = option::some(data_item_id);
     container.last_data_item_index = next_index;
@@ -735,10 +763,13 @@ public entry fun publish_data_item(
             content: data_item.content,
             sequence_index: data_item.sequence_index,
             external_index: data_item.external_index,
+            prev_data_item_chain_id: data_item_chain_id,
             prev_id: data_item.prev_id,
             prev_data_type_item_id: data_item.prev_data_type_item_id,
         });
     };
+
+    let next_index = add_with_wrap(container.last_data_type_index, 1);
 
     transfer::share_object(data_item);
 }
