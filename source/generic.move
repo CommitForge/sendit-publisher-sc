@@ -44,6 +44,12 @@ public struct DataItemChain has key, store {
     last_data_item_id: Option<ID>,
 }
 
+public struct ChainInitEvent has copy, drop {
+    container_chain_id: ID,
+    update_chain_id: ID,
+    data_item_chain_id: ID,
+}
+
 // ==========================
 // COMMONS
 // ==========================
@@ -344,6 +350,7 @@ fun init(ctx: &mut TxContext) {
         last_container_id: option::none<ID>(),
     };
 
+    let container_id = object::id(&container_chain);
     transfer::share_object(container_chain);
 
     let update_chain = UpdateChain {
@@ -352,6 +359,7 @@ fun init(ctx: &mut TxContext) {
         last_update_record_id: option::none<ID>(),
     };
 
+    let update_id = object::id(&update_chain);
     transfer::share_object(update_chain);
 
     let data_item_chain = DataItemChain {
@@ -360,7 +368,14 @@ fun init(ctx: &mut TxContext) {
         last_data_item_id: option::none<ID>(),
     };
 
+    let data_item_id = object::id(&data_item_chain);
     transfer::share_object(data_item_chain);
+
+    event::emit(ChainInitEvent {
+        container_chain_id: container_id,
+        update_chain_id: update_id,
+        data_item_chain_id: data_item_id,
+    });
 }
 
 // ==========================
