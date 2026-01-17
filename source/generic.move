@@ -784,8 +784,6 @@ public entry fun publish_data_item(
         });
     };
 
-    let next_index = add_with_wrap(container.last_data_type_index, 1);
-
     transfer::share_object(data_item);
 }
 
