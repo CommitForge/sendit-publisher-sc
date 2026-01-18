@@ -1112,7 +1112,7 @@ public entry fun remove_owner(
             container.owners_active_count = container.owners_active_count - 1;
             found = true;
 
-            let owner_id = object::id(owner);
+            let owner_id = object::id(&owner);
 
             if (event_config_ref.event_remove) {
                 let creator_event = CreatorEvent {
