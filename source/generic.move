@@ -55,9 +55,9 @@ public struct ChainInitEvent has copy, drop {
 // ==========================
 public struct Creator has store {
     creator_addr: string::String,
-    creator_update_addr: string::String,
+    creator_update_addr: Option<string::String>,
     creator_timestamp_ms: u64,
-    creator_update_timestamp_ms: u64,
+    creator_update_timestamp_ms: Option<u64>,
 }
 
 public struct Specification has store {
@@ -85,9 +85,9 @@ public struct ContainerEventConfig has store {
 
 public struct CreatorEvent has copy, drop {
     creator_addr: string::String,
-    creator_update_addr: string::String,
+    creator_update_addr: Option<string::String>,
     creator_timestamp_ms: u64,
-    creator_update_timestamp_ms: u64,
+    creator_update_timestamp_ms: Option<u64>,
 }
 
 public struct SpecificationEvent has copy, drop {
@@ -407,15 +407,15 @@ public entry fun create_container(
     ctx: &mut TxContext,
 ) {
     // Creator info
-    let owner_addr = make_owner_addr(address::to_string(sender(ctx)));
-    let creator_addr = address::to_string(sender(ctx));
+    let owner_addr = address::to_string(sender(ctx));
+    let creator_addr = owner_addr;
     let creator_timestamp_ms = clock.timestamp_ms();
 
     let creator_owner = Creator {
         creator_addr: creator_addr,
-        creator_update_addr: creator_addr,
+        creator_update_addr: option::none(),
         creator_timestamp_ms: creator_timestamp_ms,
-        creator_update_timestamp_ms: creator_timestamp_ms,
+        creator_update_timestamp_ms: option::none(),
     };
 
     // Owner object
@@ -457,9 +457,9 @@ public entry fun create_container(
 
     let creator_container = Creator {
         creator_addr: creator_addr,
-        creator_update_addr: creator_addr,
+        creator_update_addr: option::none(),
         creator_timestamp_ms: creator_timestamp_ms,
-        creator_update_timestamp_ms: creator_timestamp_ms,
+        creator_update_timestamp_ms: option::none(),
     };
 
     let last_container_id = container_chain.last_container_id;
@@ -536,9 +536,9 @@ public entry fun create_container(
 
         let creator_event = CreatorEvent {
             creator_addr: creator_addr,
-            creator_update_addr: creator_addr,
+            creator_update_addr: option::none(),
             creator_timestamp_ms: creator_timestamp_ms,
-            creator_update_timestamp_ms: creator_timestamp_ms,
+            creator_update_timestamp_ms: option::none(),
         };
 
         event::emit(ContainerCreatedEvent {
@@ -570,9 +570,9 @@ public entry fun create_container(
     if (event_add) {
         let creator_owner_event = CreatorEvent {
             creator_addr: creator_addr,
-            creator_update_addr: creator_addr,
+            creator_update_addr: option::none(),
             creator_timestamp_ms: creator_timestamp_ms,
-            creator_update_timestamp_ms: creator_timestamp_ms,
+            creator_update_timestamp_ms: option::none(),
         };
 
         event::emit(OwnerAddedEvent {
@@ -626,9 +626,9 @@ public entry fun create_data_type(
 
     let creator = Creator {
         creator_addr: creator_addr,
-        creator_update_addr: creator_addr,
+        creator_update_addr: option::none(),
         creator_timestamp_ms: creator_timestamp_ms,
-        creator_update_timestamp_ms: creator_timestamp_ms,
+        creator_update_timestamp_ms: option::none(),
     };
 
     let specification = Specification {
@@ -667,9 +667,9 @@ public entry fun create_data_type(
 
         let creator_event = CreatorEvent {
             creator_addr: creator_addr,
-            creator_update_addr: creator_addr,
+            creator_update_addr: option::none(),
             creator_timestamp_ms: creator_timestamp_ms,
-            creator_update_timestamp_ms: creator_timestamp_ms,
+            creator_update_timestamp_ms: option::none(),
         };
 
         event::emit(DataTypeCreatedEvent {
@@ -725,9 +725,9 @@ public entry fun publish_data_item(
 
     let creator = Creator {
         creator_addr: creator_addr,
-        creator_update_addr: creator_addr,
+        creator_update_addr: option::none(),
         creator_timestamp_ms: creator_timestamp_ms,
-        creator_update_timestamp_ms: creator_timestamp_ms,
+        creator_update_timestamp_ms: option::none(),
     };
 
     let data_item_chain_id = data_item_chain.last_data_item_id;
@@ -762,9 +762,9 @@ public entry fun publish_data_item(
     if (event_config_ref.event_publish) {
         let creator_event = CreatorEvent {
             creator_addr: creator_addr,
-            creator_update_addr: creator_addr,
+            creator_update_addr: option::none(),
             creator_timestamp_ms: creator_timestamp_ms,
-            creator_update_timestamp_ms: creator_timestamp_ms,
+            creator_update_timestamp_ms: option::none(),
         };
 
         event::emit(DataItemPublishedEvent {
@@ -822,9 +822,9 @@ public entry fun attach_container_child(
     // Creator struct
     let creator = Creator {
         creator_addr: creator_addr,
-        creator_update_addr: creator_addr,
+        creator_update_addr: option::none(),
         creator_timestamp_ms: creator_timestamp_ms,
-        creator_update_timestamp_ms: creator_timestamp_ms,
+        creator_update_timestamp_ms: option::none(),
     };
 
     // Create the container child link
@@ -879,6 +879,7 @@ public entry fun attach_container_child(
         1,
         ctx,
     );
+
     transfer::share_object(container_child_link);
 }
 
@@ -897,10 +898,12 @@ public entry fun add_owner(
     let event_config_ref = &container.event_config;
     assert_owner(container, permission_ref.public_update_container, ctx);
 
-    let owner_addr = make_owner_addr(new_owner);
+    let owner_addr = new_owner;
     let container_id = object::id(container);
-    let updater_addr = address::to_string(sender(ctx));
+    let caller_addr = address::to_string(sender(ctx));
     let timestamp_ms = clock.timestamp_ms();
+    let updater_addr = option::some(caller_addr);
+    let updater_timestamp_ms = option::some(timestamp_ms);
 
     let len = vector::length(&container.owners);
     let mut i = 0;
@@ -920,7 +923,7 @@ public entry fun add_owner(
             // Update role and creator metadata
             owner.role = role;
             owner.creator.creator_update_addr = updater_addr;
-            owner.creator.creator_update_timestamp_ms = timestamp_ms;
+            owner.creator.creator_update_timestamp_ms = updater_timestamp_ms;
 
             found = true;
 
@@ -928,9 +931,9 @@ public entry fun add_owner(
             if (event_config_ref.event_add && was_removed) {
                 let creator_event = CreatorEvent {
                     creator_addr: owner.creator.creator_addr,
-                    creator_update_addr: owner.creator.creator_update_addr,
+                    creator_update_addr: updater_addr,
                     creator_timestamp_ms: owner.creator.creator_timestamp_ms,
-                    creator_update_timestamp_ms: owner.creator.creator_update_timestamp_ms,
+                    creator_update_timestamp_ms: updater_timestamp_ms,
                 };
 
                 event::emit(OwnerAddedEvent {
@@ -967,10 +970,10 @@ public entry fun add_owner(
         container.last_owner_index = next_index;
 
         let creator = Creator {
-            creator_addr: updater_addr,
-            creator_update_addr: updater_addr,
+            creator_addr: caller_addr,
+            creator_update_addr: option::none(),
             creator_timestamp_ms: timestamp_ms,
-            creator_update_timestamp_ms: timestamp_ms,
+            creator_update_timestamp_ms: option::none(),
         };
 
         let owner = Owner {
@@ -1000,10 +1003,10 @@ public entry fun add_owner(
 
         if (event_config_ref.event_add) {
             let creator_event = CreatorEvent {
-                creator_addr: updater_addr,
-                creator_update_addr: updater_addr,
+                creator_addr: caller_addr,
+                creator_update_addr: option::none(),
                 creator_timestamp_ms: timestamp_ms,
-                creator_update_timestamp_ms: timestamp_ms,
+                creator_update_timestamp_ms: option::none(),
             };
 
             event::emit(OwnerAddedEvent {
@@ -1042,15 +1045,15 @@ public entry fun remove_owner(
     assert_owner(container, permission_ref.public_update_container, ctx);
     assert!(container.owners_active_count > 1, E_CANNOT_REMOVE_LAST_OWNER);
 
+    let owner_addr = owner_addr_remove;
     let container_id = object::id(container);
-    let caller_addr = make_owner_addr(address::to_string(sender(ctx)));
-    let owner_addr = make_owner_addr(owner_addr_remove);
-    let timestamp_ms = clock.timestamp_ms();
+    let caller_addr = address::to_string(sender(ctx));
+    let updater_addr = option::some(caller_addr);
+    let timestamp_ms = option::some(clock.timestamp_ms());
 
     let len = vector::length(&container.owners);
     let mut i = 0;
     let mut found = false;
-
     while (i < len) {
         let owner = vector::borrow_mut(&mut container.owners, i);
 
@@ -1064,7 +1067,7 @@ public entry fun remove_owner(
 
             // Mark as removed and update creator metadata
             owner.removed = true;
-            owner.creator.creator_update_addr = caller_addr;
+            owner.creator.creator_update_addr = updater_addr;
             owner.creator.creator_update_timestamp_ms = timestamp_ms;
 
             container.owners_active_count = container.owners_active_count - 1;
@@ -1073,9 +1076,9 @@ public entry fun remove_owner(
             if (event_config_ref.event_remove) {
                 let creator_event = CreatorEvent {
                     creator_addr: owner.creator.creator_addr,
-                    creator_update_addr: owner.creator.creator_update_addr,
+                    creator_update_addr: updater_addr,
                     creator_timestamp_ms: owner.creator.creator_timestamp_ms,
-                    creator_update_timestamp_ms: owner.creator.creator_update_timestamp_ms,
+                    creator_update_timestamp_ms: timestamp_ms,
                 };
 
                 event::emit(OwnerRemovedEvent {
@@ -1141,8 +1144,8 @@ public entry fun update_container(
     let event_config_ref = &container.event_config;
     assert_owner(container, permission_ref.public_update_container, ctx);
 
-    let updater_addr = address::to_string(sender(ctx));
-    let updater_timestamp_ms = clock.timestamp_ms();
+    let updater_addr = option::some(address::to_string(sender(ctx)));
+    let updater_timestamp_ms = option::some(clock.timestamp_ms());
 
     // Update creator update fields
     container.creator.creator_update_addr = updater_addr;
@@ -1171,9 +1174,9 @@ public entry fun update_container(
 
         let creator_event = CreatorEvent {
             creator_addr: container.creator.creator_addr,
-            creator_update_addr: container.creator.creator_update_addr,
+            creator_update_addr: updater_addr,
             creator_timestamp_ms: container.creator.creator_timestamp_ms,
-            creator_update_timestamp_ms: container.creator.creator_update_timestamp_ms,
+            creator_update_timestamp_ms: updater_timestamp_ms,
         };
 
         event::emit(ContainerUpdatedEvent {
@@ -1221,8 +1224,8 @@ public entry fun update_data_type(
     assert_owner(container, permission_ref.public_create_data_type, ctx);
     assert!(data_type.container_id == object::id(container), E_INVALID_DATATYPE);
 
-    let updater_addr = address::to_string(sender(ctx));
-    let updater_timestamp_ms = clock.timestamp_ms();
+    let updater_addr = option::some(address::to_string(sender(ctx)));
+    let updater_timestamp_ms = option::some(clock.timestamp_ms());
 
     // Update creator_update fields
     data_type.creator.creator_update_addr = updater_addr;
@@ -1251,9 +1254,9 @@ public entry fun update_data_type(
 
         let creator_event = CreatorEvent {
             creator_addr: data_type.creator.creator_addr,
-            creator_update_addr: data_type.creator.creator_update_addr,
+            creator_update_addr: updater_addr,
             creator_timestamp_ms: data_type.creator.creator_timestamp_ms,
-            creator_update_timestamp_ms: data_type.creator.creator_update_timestamp_ms,
+            creator_update_timestamp_ms: updater_timestamp_ms,
         };
 
         event::emit(DataTypeUpdatedEvent {
@@ -1303,8 +1306,8 @@ public entry fun update_container_child_link(
     assert_owner(container_parent, parent_permission_ref.public_attach_container_child, ctx);
     assert_owner(container_child, child_permission_ref.public_attach_container_child, ctx);
 
-    let updater_addr = address::to_string(sender(ctx));
-    let updater_timestamp_ms = clock.timestamp_ms();
+    let updater_addr = option::some(address::to_string(sender(ctx)));
+    let updater_timestamp_ms = option::some(clock.timestamp_ms());
 
     // Update creator_update fields
     container_child_link.creator.creator_update_addr = updater_addr;
@@ -1320,9 +1323,9 @@ public entry fun update_container_child_link(
     if (container_parent.event_config.event_update) {
         let creator_event = CreatorEvent {
             creator_addr: container_child_link.creator.creator_addr,
-            creator_update_addr: container_child_link.creator.creator_update_addr,
+            creator_update_addr: updater_addr,
             creator_timestamp_ms: container_child_link.creator.creator_timestamp_ms,
-            creator_update_timestamp_ms: container_child_link.creator.creator_update_timestamp_ms,
+            creator_update_timestamp_ms: updater_timestamp_ms,
         };
 
         event::emit(ContainerLinkUpdatedEvent {
@@ -1400,9 +1403,9 @@ fun create_update_record(
     // Copy creator fields manually
     let creator_copy = Creator {
         creator_addr: creator.creator_addr,
-        creator_update_addr: creator.creator_update_addr,
+        creator_update_addr: option::none(),
         creator_timestamp_ms: creator.creator_timestamp_ms,
-        creator_update_timestamp_ms: creator.creator_update_timestamp_ms,
+        creator_update_timestamp_ms: option::none(),
     };
 
     let record = UpdateRecord {
@@ -1424,7 +1427,7 @@ fun create_update_record(
 // ==========================
 fun assert_owner(container: &Container, asserted: bool, ctx: &TxContext) {
     if (!asserted) {
-        let caller_addr = make_owner_addr(address::to_string(sender(ctx)));
+        let caller_addr = address::to_string(sender(ctx));
         let len = vector::length(&container.owners);
         let mut i = 0;
 
@@ -1461,11 +1464,6 @@ fun string_eq(a: &string::String, b: &string::String): bool {
     };
 
     true
-}
-
-fun make_owner_addr(addr: string::String): string::String {
-    // Currently just returns the address string; optionally prefix here
-    addr
 }
 
 public fun add_with_wrap(val: u128, add: u128): u128 {
