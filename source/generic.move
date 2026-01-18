@@ -1052,7 +1052,7 @@ public entry fun add_owner(
                 role: role,
                 removed: false,
                 sequence_index: next_index,
-                prev_id: container.last_owner_id, // prev_id before push
+                prev_id: owner.prev_id, // prev_id before push
             });
         };
     };
