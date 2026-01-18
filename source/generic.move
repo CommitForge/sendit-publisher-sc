@@ -28,19 +28,19 @@ const E_INVALID_CONTAINER: u64 = 1006;
 // ==========================
 public struct ContainerChain has key, store {
     id: UID,
-    sequence_index_counter: u128,
+    last_container_index: u128,
     last_container_id: Option<ID>,
 }
 
 public struct UpdateChain has key, store {
     id: UID,
-    sequence_index_counter: u128,
+    last_update_record_index: u128,
     last_update_record_id: Option<ID>,
 }
 
 public struct DataItemChain has key, store {
     id: UID,
-    sequence_index_counter: u128,
+    last_data_item_index: u128,
     last_data_item_id: Option<ID>,
 }
 
@@ -362,7 +362,7 @@ public struct ContainerLinkUpdatedEvent has copy, drop {
 fun init(ctx: &mut TxContext) {
     let container_chain = ContainerChain {
         id: object::new(ctx),
-        sequence_index_counter: 0,
+        last_container_index: 0,
         last_container_id: option::none<ID>(),
     };
 
@@ -371,7 +371,7 @@ fun init(ctx: &mut TxContext) {
 
     let update_chain = UpdateChain {
         id: object::new(ctx),
-        sequence_index_counter: 0,
+        last_update_record_index: 0,
         last_update_record_id: option::none<ID>(),
     };
 
@@ -380,7 +380,7 @@ fun init(ctx: &mut TxContext) {
 
     let data_item_chain = DataItemChain {
         id: object::new(ctx),
-        sequence_index_counter: 0,
+        last_data_item_index: 0,
         last_data_item_id: option::none<ID>(),
     };
 
@@ -511,8 +511,7 @@ public entry fun create_container(
     let container_id = object::id(&container);
 
     // Update chain
-    container_chain.sequence_index_counter =
-        add_with_wrap(container_chain.sequence_index_counter, 1);
+    container_chain.last_container_index = add_with_wrap(container_chain.last_container_index, 1);
     container_chain.last_container_id = option::some(container_id);
 
     // Collect active owner addresses
@@ -778,8 +777,7 @@ public entry fun publish_data_item(
     let data_item_id = object::id(&data_item);
 
     // Update chain
-    data_item_chain.sequence_index_counter =
-        add_with_wrap(data_item_chain.sequence_index_counter, 1);
+    data_item_chain.last_data_item_index = add_with_wrap(data_item_chain.last_data_item_index, 1);
     data_item_chain.last_data_item_id = option::some(data_item_id);
 
     data_type.last_data_item_id = option::some(data_item_id);
@@ -1474,8 +1472,8 @@ fun create_update_record(
     action: u8, // 1 = CREATE, 2 = UPDATE
     ctx: &mut TxContext,
 ) {
-    let next_index_chain = add_with_wrap(update_chain.sequence_index_counter, 1);
-    update_chain.sequence_index_counter = next_index_chain;
+    let next_index_chain = add_with_wrap(update_chain.last_update_record_index, 1);
+    update_chain.last_update_record_index = next_index_chain;
 
     // Copy creator fields manually
     let creator_chain = Creator {
