@@ -1367,7 +1367,6 @@ public entry fun update_container_child_link(
     let container_parent_id = object::id(container_parent);
     let container_child_id = object::id(container_child);
     assert!(container_parent_id != container_child_id, E_INVALID_CONTAINER);
-    let container_child_link_id = object::id(container_child_link);
 
     let parent_permission_ref = &container_parent.permission;
     let child_permission_ref = &container_child.permission;
@@ -1375,6 +1374,7 @@ public entry fun update_container_child_link(
     assert_owner(container_parent, parent_permission_ref.public_attach_container_child, ctx);
     assert_owner(container_child, child_permission_ref.public_attach_container_child, ctx);
 
+    let container_child_link_id = object::id(container_child_link);
     let caller_addr = address::to_string(sender(ctx));
     let timestamp_ms = clock.timestamp_ms();
     let updater_addr = option::some(caller_addr);
