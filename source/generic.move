@@ -836,6 +836,12 @@ public entry fun attach_container_child(
     // Ensure parent and child are not the same
     assert!(object::id(container_parent) != object::id(container_child), E_INVALID_CONTAINER);
 
+    // Ensure a container that is already a parent cannot become a child
+    assert!(
+        container_child.last_container_child_id.is_none(),
+        E_INVALID_CONTAINER
+    );
+
     // Increment sequence
     let next_index = add_with_wrap(container_parent.last_container_child_index, 1);
 
