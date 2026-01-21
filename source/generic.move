@@ -2,7 +2,7 @@ module sendit_messenger::generic_store;
 
 use iota::clock::Clock;
 use iota::event;
-use iota::tx_context::{sender};
+use iota::tx_context::sender;
 use std::string;
 
 // ==========================
@@ -114,6 +114,7 @@ public struct ContainerEventConfigEvent has copy, drop {
 // ==========================
 public struct Container has key, store {
     id: UID,
+    parent_container_id: Option<ID>,
     external_id: string::String,
     creator: Creator,
     owners: vector<Owner>,
@@ -222,9 +223,10 @@ public struct UpdateContainerRecord has key, store {
 // ==========================
 public struct ContainerCreatedEvent has copy, drop {
     object_id: ID,
+    parent_container_id: Option<ID>,
     external_id: string::String,
     creator: CreatorEvent,
-    owners: vector<address>, // addresses
+    owners: vector<OwnerAddedEvent>,
     owners_active_count: u32,
     name: string::String,
     description: string::String,
@@ -478,6 +480,7 @@ public entry fun create_container(
     // Container object
     let mut container = Container {
         id: object::new(ctx),
+        parent_container_id: option::none(),
         owners: vector::singleton(owner),
         owners_active_count: 1,
         external_id: external_id,
@@ -510,7 +513,7 @@ public entry fun create_container(
     container_chain.last_container_id = option::some(container_id);
 
     // Collect active owner addresses
-    let mut owner_addrs = vector::empty<address>();
+    /* let mut owner_addrs = vector::empty<string::String>();
     let len = vector::length(&container.owners);
     let mut i = 0;
     while (i < len) {
@@ -519,7 +522,7 @@ public entry fun create_container(
             vector::push_back(&mut owner_addrs, owner_ref.addr);
         };
         i = i + 1;
-    };
+    };*/
 
     // Emit event
     if (event_create) {
@@ -553,11 +556,23 @@ public entry fun create_container(
             creator_update_timestamp_ms: option::none(),
         };
 
+        let owner_event = OwnerAddedEvent {
+            object_id: owner_id,
+            container_id: container_id,
+            creator: creator_event,
+            addr: creator_owner_addr,
+            role: string::utf8(b"creator"),
+            removed: false,
+            sequence_index: 1,
+            prev_id: option::none(),
+        };
+
         event::emit(ContainerCreatedEvent {
             object_id: container_id,
+            parent_container_id: option::none(),
             external_id: container.external_id,
             creator: creator_event,
-            owners: owner_addrs,
+            owners: vector::singleton(owner_event),
             owners_active_count: 1,
             name: container.name,
             description: container.description,
@@ -835,10 +850,10 @@ public entry fun attach_container_child(
     // Ensure parent and child are not the same
     assert!(container_parent_id != container_child_id, E_INVALID_CONTAINER);
     // Ensure a container that is already a parent cannot become a child
-    assert!(
-        container_child.last_container_child_id.is_none(),
-        E_INVALID_CONTAINER
-    );
+    assert!(container_child.last_container_child_id.is_none(), E_INVALID_CONTAINER);
+    // Prevent attaching the same child more than once
+    assert!(option::is_none(&container_child.parent_container_id), E_INVALID_CONTAINER);
+    container_child.parent_container_id = option::some(container_parent_id);
 
     // Increment sequence
     let next_index = add_with_wrap(container_parent.last_container_child_index, 1);
