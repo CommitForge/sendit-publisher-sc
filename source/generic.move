@@ -638,10 +638,10 @@ public entry fun create_data_type(
     let event_config_ref = &container.event_config;
     assert_owner(container, permission_ref.public_create_data_type, ctx);
 
+    let container_id = object::id(container);
     let next_index = add_with_wrap(container.last_data_type_index, 1);
     let creator_addr = address::to_string(sender(ctx));
     let creator_timestamp_ms = clock.timestamp_ms();
-    let container_id = object::id(container);
 
     let creator = Creator {
         creator_addr: creator_addr,
