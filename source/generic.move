@@ -1,6 +1,5 @@
 module sendit_messenger::generic_store;
 
-use iota::address;
 use iota::clock::Clock;
 use iota::event;
 use iota::tx_context::{sender};
@@ -51,8 +50,8 @@ public struct ChainInitEvent has copy, drop {
 // COMMONS
 // ==========================
 public struct Creator has store {
-    creator_addr: string::String,
-    creator_update_addr: Option<string::String>,
+    creator_addr: address,
+    creator_update_addr: Option<address>,
     creator_timestamp_ms: u64,
     creator_update_timestamp_ms: Option<u64>,
 }
@@ -81,8 +80,8 @@ public struct ContainerEventConfig has store {
 }
 
 public struct CreatorEvent has copy, drop {
-    creator_addr: string::String,
-    creator_update_addr: Option<string::String>,
+    creator_addr: address,
+    creator_update_addr: Option<address>,
     creator_timestamp_ms: u64,
     creator_update_timestamp_ms: Option<u64>,
 }
@@ -188,7 +187,7 @@ public struct ContainerChildLink has key, store {
 public struct Owner has key, store {
     id: UID,
     creator: Creator,
-    addr: string::String,
+    addr: address,
     role: string::String,
     removed: bool,
     sequence_index: u128,
@@ -225,7 +224,7 @@ public struct ContainerCreatedEvent has copy, drop {
     object_id: ID,
     external_id: string::String,
     creator: CreatorEvent,
-    owners: vector<string::String>, // addresses
+    owners: vector<address>, // addresses
     owners_active_count: u32,
     name: string::String,
     description: string::String,
@@ -297,7 +296,7 @@ public struct OwnerAddedEvent has copy, drop {
     object_id: ID,
     container_id: ID,
     creator: CreatorEvent,
-    addr: string::String,
+    addr: address,
     role: string::String,
     removed: bool,
     sequence_index: u128,
@@ -308,7 +307,7 @@ public struct OwnerRemovedEvent has copy, drop {
     object_id: ID,
     container_id: ID,
     creator: CreatorEvent,
-    addr: string::String,
+    addr: address,
     role: string::String,
     removed: bool,
     sequence_index: u128,
@@ -420,7 +419,7 @@ public entry fun create_container(
     ctx: &mut TxContext,
 ) {
     // Creator info
-    let creator_owner_addr = address::to_string(sender(ctx));
+    let creator_owner_addr = sender(ctx);
     let creator_timestamp_ms = clock.timestamp_ms();
 
     let creator_owner = Creator {
@@ -511,7 +510,7 @@ public entry fun create_container(
     container_chain.last_container_id = option::some(container_id);
 
     // Collect active owner addresses
-    let mut owner_addrs = vector::empty<string::String>();
+    let mut owner_addrs = vector::empty<address>();
     let len = vector::length(&container.owners);
     let mut i = 0;
     while (i < len) {
@@ -640,7 +639,7 @@ public entry fun create_data_type(
 
     let container_id = object::id(container);
     let next_index = add_with_wrap(container.last_data_type_index, 1);
-    let creator_addr = address::to_string(sender(ctx));
+    let creator_addr = sender(ctx);
     let creator_timestamp_ms = clock.timestamp_ms();
 
     let creator = Creator {
@@ -744,7 +743,7 @@ public entry fun publish_data_item(
 
     let data_type_id = object::id(data_type);
     let next_index = add_with_wrap(container.last_data_item_index, 1);
-    let creator_addr = address::to_string(sender(ctx));
+    let creator_addr = sender(ctx);
     let creator_timestamp_ms = clock.timestamp_ms();
 
     let creator = Creator {
@@ -843,7 +842,7 @@ public entry fun attach_container_child(
 
     // Increment sequence
     let next_index = add_with_wrap(container_parent.last_container_child_index, 1);
-    let creator_addr = address::to_string(sender(ctx));
+    let creator_addr = sender(ctx);
     let creator_timestamp_ms = clock.timestamp_ms();
 
     // Creator struct
@@ -918,7 +917,7 @@ public entry fun attach_container_child(
 public entry fun add_owner(
     update_chain: &mut UpdateChain,
     container: &mut Container,
-    new_owner: string::String,
+    new_owner: address,
     role: string::String,
     clock: &Clock,
     ctx: &mut TxContext,
@@ -930,7 +929,7 @@ public entry fun add_owner(
 
     let owner_addr = new_owner;
     let container_id = object::id(container);
-    let caller_addr = address::to_string(sender(ctx));
+    let caller_addr = sender(ctx);
     let timestamp_ms = clock.timestamp_ms();
     let updater_addr = option::some(caller_addr);
     let updater_timestamp_ms = option::some(timestamp_ms);
@@ -941,7 +940,7 @@ public entry fun add_owner(
     while (i < len) {
         let owner = vector::borrow_mut(&mut container.owners, i);
 
-        if (string_eq(&owner.addr, &owner_addr)) {
+        if (owner.addr == owner_addr) {
             // Owner exists — maybe re-activate if removed
             let was_removed = owner.removed;
             if (was_removed) {
@@ -1077,7 +1076,7 @@ public entry fun add_owner(
 public entry fun remove_owner(
     update_chain: &mut UpdateChain,
     container: &mut Container,
-    owner_addr_remove: string::String,
+    owner_addr_remove: address,
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
@@ -1088,7 +1087,7 @@ public entry fun remove_owner(
 
     let owner_addr = owner_addr_remove;
     let container_id = object::id(container);
-    let caller_addr = address::to_string(sender(ctx));
+    let caller_addr = sender(ctx);
     let timestamp_ms = clock.timestamp_ms();
     let updater_addr = option::some(caller_addr);
     let update_timestamp_ms = option::some(timestamp_ms);
@@ -1099,9 +1098,9 @@ public entry fun remove_owner(
     while (i < len) {
         let owner = vector::borrow_mut(&mut container.owners, i);
 
-        if (string_eq(&owner.addr, &owner_addr)) {
+        if (owner.addr == owner_addr) {
             // Cannot remove self
-            assert!(!string_eq(&caller_addr, &owner_addr), E_CANNOT_REMOVE_SELF);
+            assert!(caller_addr != owner_addr, E_CANNOT_REMOVE_SELF);
 
             if (owner.removed) {
                 abort E_OWNER_NOT_FOUND
@@ -1196,7 +1195,7 @@ public entry fun update_container(
     assert_owner(container, permission_ref.public_update_container, ctx);
 
     let container_id = object::id(container);
-    let caller_addr = address::to_string(sender(ctx));
+    let caller_addr = sender(ctx);
     let timestamp_ms = clock.timestamp_ms();
     let updater_addr = option::some(caller_addr);
     let updater_timestamp_ms = option::some(timestamp_ms);
@@ -1283,7 +1282,7 @@ public entry fun update_data_type(
     assert!(data_type.container_id == container_id, E_INVALID_DATATYPE);
 
     let data_type_id = object::id(data_type);
-    let caller_addr = address::to_string(sender(ctx));
+    let caller_addr = sender(ctx);
     let timestamp_ms = clock.timestamp_ms();
     let updater_addr = option::some(caller_addr);
     let updater_timestamp_ms = option::some(timestamp_ms);
@@ -1371,7 +1370,7 @@ public entry fun update_container_child_link(
     assert_owner(container_child, child_permission_ref.public_attach_container_child, ctx);
 
     let container_child_link_id = object::id(container_child_link);
-    let caller_addr = address::to_string(sender(ctx));
+    let caller_addr = sender(ctx);
     let timestamp_ms = clock.timestamp_ms();
     let updater_addr = option::some(caller_addr);
     let updater_timestamp_ms = option::some(timestamp_ms);
@@ -1468,7 +1467,7 @@ fun create_update_record(
     container: &mut Container,
     container_id: ID,
     object_id: ID,
-    creator_addr: string::String,
+    creator_addr: address,
     creator_timestamp: u64,
     object_type: string::String,
     action: u8, // 1 = CREATE, 2 = UPDATE
@@ -1528,12 +1527,12 @@ fun create_update_record(
 // ==========================
 fun assert_owner(container: &Container, asserted: bool, ctx: &TxContext) {
     if (!asserted) {
-        let caller_addr = address::to_string(sender(ctx));
+        let caller_addr = sender(ctx);
         let len = vector::length(&container.owners);
         let mut i = 0;
         while (i < len) {
             let owner = vector::borrow(&container.owners, i);
-            if (!owner.removed && string_eq(&owner.addr, &caller_addr)) {
+            if (!owner.removed && owner.addr == caller_addr) {
                 return // Authorized, exit early
             };
             i = i + 1;
@@ -1547,24 +1546,6 @@ fun assert_owner(container: &Container, asserted: bool, ctx: &TxContext) {
 // ==========================
 // STRING AND NUMBER HELPERS
 // ==========================
-fun string_eq(a: &string::String, b: &string::String): bool {
-    let ba = string::as_bytes(a);
-    let bb = string::as_bytes(b);
-
-    if (vector::length(ba) != vector::length(bb)) {
-        return false
-    };
-
-    let mut i = 0;
-    while (i < vector::length(ba)) {
-        if (*vector::borrow(ba, i) != *vector::borrow(bb, i)) {
-            return false
-        };
-        i = i + 1;
-    };
-
-    true
-}
 
 public fun add_with_wrap(val: u128, add: u128): u128 {
     if (val > MAX_u128 - add) {
