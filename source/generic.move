@@ -774,13 +774,14 @@ public entry fun publish_data_item(
     };
 
     let data_item_id = object::id(&data_item);
+    let data_item_id_option = option::some(data_item_id);
 
     // Update chain
     data_item_chain.last_data_item_index = add_with_wrap(data_item_chain.last_data_item_index, 1);
-    data_item_chain.last_data_item_id = option::some(data_item_id);
+    data_item_chain.last_data_item_id = data_item_id_option;
 
-    data_type.last_data_item_id = option::some(data_item_id);
-    container.last_data_item_id = option::some(data_item_id);
+    data_type.last_data_item_id = data_item_id_option;
+    container.last_data_item_id = data_item_id_option;
     container.last_data_item_index = next_index;
 
     if (event_config_ref.event_publish) {
