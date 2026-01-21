@@ -742,8 +742,8 @@ public entry fun publish_data_item(
     assert_owner(container, permission_ref.public_publish_data_item, ctx);
     let container_id = object::id(container);
     assert!(data_type.container_id == container_id, E_INVALID_DATATYPE);
-    let data_type_id = object::id(data_type);
 
+    let data_type_id = object::id(data_type);
     let next_index = add_with_wrap(container.last_data_item_index, 1);
     let creator_addr = address::to_string(sender(ctx));
     let creator_timestamp_ms = clock.timestamp_ms();
@@ -835,7 +835,6 @@ public entry fun attach_container_child(
     let container_child_id = object::id(container_child);
     // Ensure parent and child are not the same
     assert!(container_parent_id != container_child_id, E_INVALID_CONTAINER);
-
     // Ensure a container that is already a parent cannot become a child
     assert!(
         container_child.last_container_child_id.is_none(),
@@ -844,8 +843,6 @@ public entry fun attach_container_child(
 
     // Increment sequence
     let next_index = add_with_wrap(container_parent.last_container_child_index, 1);
-
-    // Who is creating this link
     let creator_addr = address::to_string(sender(ctx));
     let creator_timestamp_ms = clock.timestamp_ms();
 
@@ -1282,9 +1279,9 @@ public entry fun update_data_type(
     let permission_ref = &container.permission;
     let event_config_ref = &container.event_config;
     assert_owner(container, permission_ref.public_create_data_type, ctx);
-    assert!(data_type.container_id == object::id(container), E_INVALID_DATATYPE);
-
     let container_id = object::id(container);
+    assert!(data_type.container_id == container_id, E_INVALID_DATATYPE);
+
     let data_type_id = object::id(data_type);
     let caller_addr = address::to_string(sender(ctx));
     let timestamp_ms = clock.timestamp_ms();
@@ -1368,10 +1365,8 @@ public entry fun update_container_child_link(
     let container_parent_id = object::id(container_parent);
     let container_child_id = object::id(container_child);
     assert!(container_parent_id != container_child_id, E_INVALID_CONTAINER);
-
     let parent_permission_ref = &container_parent.permission;
     let child_permission_ref = &container_child.permission;
-
     assert_owner(container_parent, parent_permission_ref.public_attach_container_child, ctx);
     assert_owner(container_child, child_permission_ref.public_attach_container_child, ctx);
 
