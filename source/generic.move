@@ -420,12 +420,11 @@ public entry fun create_container(
     ctx: &mut TxContext,
 ) {
     // Creator info
-    let owner_addr = address::to_string(sender(ctx));
-    let creator_addr = owner_addr;
+    let creator_owner_addr = address::to_string(sender(ctx));
     let creator_timestamp_ms = clock.timestamp_ms();
 
     let creator_owner = Creator {
-        creator_addr: creator_addr,
+        creator_addr: creator_owner_addr,
         creator_update_addr: option::none(),
         creator_timestamp_ms: creator_timestamp_ms,
         creator_update_timestamp_ms: option::none(),
@@ -435,7 +434,7 @@ public entry fun create_container(
     let owner = Owner {
         id: object::new(ctx),
         creator: creator_owner,
-        addr: owner_addr,
+        addr: creator_owner_addr,
         role: string::utf8(b"creator"),
         removed: false,
         sequence_index: 1,
@@ -469,7 +468,7 @@ public entry fun create_container(
     };
 
     let creator_container = Creator {
-        creator_addr: creator_addr,
+        creator_addr: creator_owner_addr,
         creator_update_addr: option::none(),
         creator_timestamp_ms: creator_timestamp_ms,
         creator_update_timestamp_ms: option::none(),
@@ -549,7 +548,7 @@ public entry fun create_container(
         };
 
         let creator_event = CreatorEvent {
-            creator_addr: creator_addr,
+            creator_addr: creator_owner_addr,
             creator_update_addr: option::none(),
             creator_timestamp_ms: creator_timestamp_ms,
             creator_update_timestamp_ms: option::none(),
@@ -585,7 +584,7 @@ public entry fun create_container(
 
     if (event_add) {
         let creator_owner_event = CreatorEvent {
-            creator_addr: creator_addr,
+            creator_addr: creator_owner_addr,
             creator_update_addr: option::none(),
             creator_timestamp_ms: creator_timestamp_ms,
             creator_update_timestamp_ms: option::none(),
@@ -595,7 +594,7 @@ public entry fun create_container(
             object_id: owner_id,
             container_id: container_id,
             creator: creator_owner_event,
-            addr: owner_addr,
+            addr: creator_owner_addr,
             role: string::utf8(b"creator"),
             removed: false,
             sequence_index: 1,
@@ -608,7 +607,7 @@ public entry fun create_container(
         &mut container,
         container_id,
         container_id,
-        creator_addr,
+        creator_owner_addr,
         creator_timestamp_ms,
         string::utf8(b"container"),
         1,
