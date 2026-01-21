@@ -3,11 +3,8 @@ module sendit_messenger::generic_store;
 use iota::address;
 use iota::clock::Clock;
 use iota::event;
-use iota::object::{Self, UID, ID};
-use iota::transfer;
-use iota::tx_context::{TxContext, sender};
+use iota::tx_context::{sender};
 use std::string;
-use std::vector;
 
 // ==========================
 // CONSTANTS
@@ -743,7 +740,9 @@ public entry fun publish_data_item(
     let permission_ref = &container.permission;
     let event_config_ref = &container.event_config;
     assert_owner(container, permission_ref.public_publish_data_item, ctx);
-    assert!(data_type.container_id == object::id(container), E_INVALID_DATATYPE);
+    let container_id = object::id(container);
+    assert!(data_type.container_id == container_id, E_INVALID_DATATYPE);
+    let data_type_id = object::id(data_type);
 
     let next_index = add_with_wrap(container.last_data_item_index, 1);
     let creator_addr = address::to_string(sender(ctx));
@@ -760,8 +759,8 @@ public entry fun publish_data_item(
 
     let data_item = DataItem {
         id: object::new(ctx),
-        container_id: object::id(container),
-        data_type_id: object::id(data_type),
+        container_id: container_id,
+        data_type_id: data_type_id,
         external_id: external_id,
         creator: creator,
         name: name,
@@ -794,8 +793,8 @@ public entry fun publish_data_item(
 
         event::emit(DataItemPublishedEvent {
             object_id: data_item_id,
-            container_id: object::id(container),
-            data_type_id: object::id(data_type),
+            container_id: container_id,
+            data_type_id: data_type_id,
             external_id: data_item.external_id,
             creator: creator_event,
             name: data_item.name,
@@ -832,9 +831,10 @@ public entry fun attach_container_child(
     let parent_event_config_ref = &container_parent.event_config;
     assert_owner(container_parent, parent_permission_ref.public_attach_container_child, ctx);
     assert_owner(container_child, child_permission_ref.public_attach_container_child, ctx);
-
+    let container_parent_id = object::id(container_parent);
+    let container_child_id = object::id(container_child);
     // Ensure parent and child are not the same
-    assert!(object::id(container_parent) != object::id(container_child), E_INVALID_CONTAINER);
+    assert!(container_parent_id != container_child_id, E_INVALID_CONTAINER);
 
     // Ensure a container that is already a parent cannot become a child
     assert!(
@@ -849,8 +849,6 @@ public entry fun attach_container_child(
     let creator_addr = address::to_string(sender(ctx));
     let creator_timestamp_ms = clock.timestamp_ms();
 
-    let container_parent_id = object::id(container_parent);
-
     // Creator struct
     let creator = Creator {
         creator_addr: creator_addr,
@@ -863,7 +861,7 @@ public entry fun attach_container_child(
     let container_child_link = ContainerChildLink {
         id: object::new(ctx),
         container_parent_id: container_parent_id,
-        container_child_id: object::id(container_child),
+        container_child_id: container_child_id,
         external_id: external_id,
         creator: creator,
         name: name,
@@ -891,7 +889,7 @@ public entry fun attach_container_child(
         event::emit(ContainerChildLinkAttachedEvent {
             object_id: container_child_link_id,
             container_parent_id: container_parent_id,
-            container_child_id: object::id(container_child),
+            container_child_id: container_child_id,
             external_id: container_child_link.external_id,
             creator: creator_event,
             name: container_child_link.name,
@@ -961,6 +959,7 @@ public entry fun add_owner(
 
             found = true;
             let owner_id = object::id(owner);
+            let owner_prev_id = owner.prev_id;
 
             // Emit event only if owner was previously removed
             if (event_add && was_removed) {
@@ -979,7 +978,7 @@ public entry fun add_owner(
                     role: owner.role,
                     removed: owner.removed,
                     sequence_index: owner.sequence_index,
-                    prev_id: owner.prev_id,
+                    prev_id: owner_prev_id,
                 });
             };
 
@@ -996,7 +995,7 @@ public entry fun add_owner(
                 ctx,
             );
 
-            break;
+            break
         };
 
         i = i + 1;
@@ -1025,6 +1024,7 @@ public entry fun add_owner(
         };
 
         let owner_id = object::id(&owner);
+        let owner_prev_id = owner.prev_id;
         container.last_owner_id = option::some(owner_id);
         container.owners_active_count = container.owners_active_count + 1;
 
@@ -1058,7 +1058,7 @@ public entry fun add_owner(
                 role: role,
                 removed: false,
                 sequence_index: next_index,
-                prev_id: owner.prev_id, // prev_id before push
+                prev_id: owner_prev_id, // prev_id before push
             });
         };
     };
@@ -1107,7 +1107,7 @@ public entry fun remove_owner(
             assert!(!string_eq(&caller_addr, &owner_addr), E_CANNOT_REMOVE_SELF);
 
             if (owner.removed) {
-                abort E_OWNER_NOT_FOUND;
+                abort E_OWNER_NOT_FOUND
             };
 
             // Mark as removed and update creator metadata
@@ -1118,7 +1118,8 @@ public entry fun remove_owner(
             container.owners_active_count = container.owners_active_count - 1;
             found = true;
 
-            let owner_id = object::id(&owner);
+            let owner_id = object::id(owner);
+            let owner_prev_id = owner.prev_id;
 
             if (event_config_ref.event_remove) {
                 let creator_event = CreatorEvent {
@@ -1136,7 +1137,7 @@ public entry fun remove_owner(
                     role: owner.role,
                     removed: owner.removed,
                     sequence_index: owner.sequence_index,
-                    prev_id: owner.prev_id,
+                    prev_id: owner_prev_id,
                 });
             };
 
@@ -1213,11 +1214,11 @@ public entry fun update_container(
     container.name = new_name;
     container.description = new_description;
     container.content = new_content;
+    container.external_index = new_external_index;
     spec_ref.version = new_version;
     spec_ref.schemas = new_schemas;
     spec_ref.apis = new_apis;
     spec_ref.resources = new_resources;
-    container.external_index = new_external_index;
 
     // Emit event
     if (event_config_ref.event_update) {
@@ -1300,11 +1301,11 @@ public entry fun update_data_type(
     data_type.name = new_name;
     data_type.description = new_description;
     data_type.content = new_content;
+    data_type.external_index = new_external_index;
     spec_ref.version = new_version;
     spec_ref.schemas = new_schemas;
     spec_ref.apis = new_apis;
     spec_ref.resources = new_resources;
-    data_type.external_index = new_external_index;
 
     // Emit event
     if (event_config_ref.event_update) {
@@ -1538,7 +1539,7 @@ fun assert_owner(container: &Container, asserted: bool, ctx: &TxContext) {
         while (i < len) {
             let owner = vector::borrow(&container.owners, i);
             if (!owner.removed && string_eq(&owner.addr, &caller_addr)) {
-                return; // Authorized, exit early
+                return // Authorized, exit early
             };
             i = i + 1;
         };
@@ -1552,17 +1553,17 @@ fun assert_owner(container: &Container, asserted: bool, ctx: &TxContext) {
 // STRING AND NUMBER HELPERS
 // ==========================
 fun string_eq(a: &string::String, b: &string::String): bool {
-    let ba = string::bytes(a);
-    let bb = string::bytes(b);
+    let ba = string::as_bytes(a);
+    let bb = string::as_bytes(b);
 
     if (vector::length(ba) != vector::length(bb)) {
-        return false;
+        return false
     };
 
     let mut i = 0;
     while (i < vector::length(ba)) {
         if (*vector::borrow(ba, i) != *vector::borrow(bb, i)) {
-            return false;
+            return false
         };
         i = i + 1;
     };
