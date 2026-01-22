@@ -114,7 +114,7 @@ public struct ContainerEventConfigEvent has copy, drop {
 // ==========================
 public struct Container has key, store {
     id: UID,
-    parent_container_id: Option<ID>,
+    container_parent_id: Option<ID>,
     external_id: string::String,
     creator: Creator,
     owners: vector<Owner>,
@@ -223,7 +223,7 @@ public struct UpdateContainerRecord has key, store {
 // ==========================
 public struct ContainerCreatedEvent has copy, drop {
     object_id: ID,
-    parent_container_id: Option<ID>,
+    container_parent_id: Option<ID>,
     external_id: string::String,
     creator: CreatorEvent,
     owners: vector<OwnerAddedEvent>,
@@ -318,6 +318,7 @@ public struct OwnerRemovedEvent has copy, drop {
 
 public struct ContainerUpdatedEvent has copy, drop {
     object_id: ID,
+    container_parent_id: Option<ID>,
     external_id: string::String,
     creator: CreatorEvent,
     name: string::String,
@@ -480,7 +481,7 @@ public entry fun create_container(
     // Container object
     let mut container = Container {
         id: object::new(ctx),
-        parent_container_id: option::none(),
+        container_parent_id: option::none(),
         owners: vector::singleton(owner),
         owners_active_count: 1,
         external_id: external_id,
@@ -569,7 +570,7 @@ public entry fun create_container(
 
         event::emit(ContainerCreatedEvent {
             object_id: container_id,
-            parent_container_id: option::none(),
+            container_parent_id: option::none(),
             external_id: container.external_id,
             creator: creator_event,
             owners: vector::singleton(owner_event),
@@ -852,8 +853,8 @@ public entry fun attach_container_child(
     // Ensure a container that is already a parent cannot become a child
     assert!(container_child.last_container_child_link_id.is_none(), E_INVALID_CONTAINER);
     // Prevent attaching the same child more than once
-    assert!(option::is_none(&container_child.parent_container_id), E_INVALID_CONTAINER);
-    container_child.parent_container_id = option::some(container_parent_id);
+    assert!(option::is_none(&container_child.container_parent_id), E_INVALID_CONTAINER);
+    container_child.container_parent_id = option::some(container_parent_id);
 
     // Increment sequence
     let next_index = add_with_wrap(container_parent.last_container_child_link_index, 1);
@@ -1249,6 +1250,7 @@ public entry fun update_container(
 
         event::emit(ContainerUpdatedEvent {
             object_id: container_id,
+            container_parent_id: container.container_parent_id,
             external_id: container.external_id,
             creator: creator_event,
             name: container.name,
