@@ -128,12 +128,12 @@ public struct Container has key, store {
     sequence_index: u128,
     external_index: u128,
     last_owner_index: u128,
-    last_container_child_index: u128,
+    last_container_child_link_index: u128,
     last_data_type_index: u128,
     last_data_item_index: u128,
     last_update_record_index: u128,
     last_owner_id: Option<ID>,
-    last_container_child_id: Option<ID>,
+    last_container_child_link_id: Option<ID>,
     last_data_type_id: Option<ID>,
     last_data_item_id: Option<ID>,
     last_update_record_id: Option<ID>,
@@ -237,12 +237,12 @@ public struct ContainerCreatedEvent has copy, drop {
     sequence_index: u128,
     external_index: u128,
     last_owner_index: u128,
-    last_container_child_index: u128,
+    last_container_child_link_index: u128,
     last_data_type_index: u128,
     last_data_item_index: u128,
     last_update_record_index: u128,
     last_owner_id: Option<ID>,
-    last_container_child_id: Option<ID>,
+    last_container_child_link_id: Option<ID>,
     last_data_type_id: Option<ID>,
     last_data_item_id: Option<ID>,
     last_update_record_id: Option<ID>,
@@ -494,12 +494,12 @@ public entry fun create_container(
         sequence_index: 1,
         external_index: external_index,
         last_owner_index: 1,
-        last_container_child_index: 0,
+        last_container_child_link_index: 0,
         last_data_type_index: 0,
         last_data_item_index: 0,
         last_update_record_index: 0,
         last_owner_id: option::some(owner_id),
-        last_container_child_id: option::none(),
+        last_container_child_link_id: option::none(),
         last_data_type_id: option::none(),
         last_data_item_id: option::none(),
         last_update_record_id: option::none(),
@@ -583,12 +583,12 @@ public entry fun create_container(
             sequence_index: container.sequence_index,
             external_index: container.external_index,
             last_owner_index: container.last_owner_index,
-            last_container_child_index: container.last_container_child_index,
+            last_container_child_link_index: container.last_container_child_link_index,
             last_data_type_index: container.last_data_type_index,
             last_data_item_index: container.last_data_item_index,
             last_update_record_index: container.last_update_record_index,
             last_owner_id: container.last_owner_id,
-            last_container_child_id: container.last_container_child_id,
+            last_container_child_link_id: container.last_container_child_link_id,
             last_data_type_id: container.last_data_type_id,
             last_data_item_id: container.last_data_item_id,
             last_update_record_id: container.last_update_record_id,
@@ -850,13 +850,13 @@ public entry fun attach_container_child(
     // Ensure parent and child are not the same
     assert!(container_parent_id != container_child_id, E_INVALID_CONTAINER);
     // Ensure a container that is already a parent cannot become a child
-    assert!(container_child.last_container_child_id.is_none(), E_INVALID_CONTAINER);
+    assert!(container_child.last_container_child_link_id.is_none(), E_INVALID_CONTAINER);
     // Prevent attaching the same child more than once
     assert!(option::is_none(&container_child.parent_container_id), E_INVALID_CONTAINER);
     container_child.parent_container_id = option::some(container_parent_id);
 
     // Increment sequence
-    let next_index = add_with_wrap(container_parent.last_container_child_index, 1);
+    let next_index = add_with_wrap(container_parent.last_container_child_link_index, 1);
     let creator_addr = sender(ctx);
     let creator_timestamp_ms = clock.timestamp_ms();
 
@@ -880,12 +880,12 @@ public entry fun attach_container_child(
         content: content,
         sequence_index: next_index,
         external_index: external_index,
-        prev_id: container_parent.last_container_child_id,
+        prev_id: container_parent.last_container_child_link_id,
     };
 
     let container_child_link_id = object::id(&container_child_link);
-    container_parent.last_container_child_id = option::some(container_child_link_id);
-    container_parent.last_container_child_index = next_index;
+    container_parent.last_container_child_link_id = option::some(container_child_link_id);
+    container_parent.last_container_child_link_index = next_index;
     container_child.sequence_index = next_index;
 
     // Emit event if configured
