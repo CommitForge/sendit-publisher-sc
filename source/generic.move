@@ -1581,7 +1581,7 @@ fun string_eq(a: &string::String, b: &string::String): bool {
     true
 }
 
-public fun add_with_wrap(val: u128, add: u128): u128 {
+fun add_with_wrap(val: u128, add: u128): u128 {
     if (val > MAX_u128 - add) {
         1
     } else {
