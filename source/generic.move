@@ -18,6 +18,8 @@ const E_CANNOT_REMOVE_SELF: u64 = 1003;
 const E_OWNER_NOT_FOUND: u64 = 1004;
 const E_NO_ACTIVE_OWNERS: u64 = 1005;
 const E_INVALID_CONTAINER: u64 = 1006;
+const E_INVALID_DATAITEM: u64 = 1007;
+const E_VERIFICATION_CONFLICT: u64 = 1008;
 
 // ==========================
 // CHAINS
@@ -38,6 +40,12 @@ public struct DataItemChain has key, store {
     id: UID,
     last_data_item_index: u128,
     last_data_item_id: Option<ID>,
+}
+
+public struct DataItemVerificationChain has key, store {
+    id: UID,
+    last_data_item_verification_index: u128,
+    last_data_item_verification_id: Option<ID>,
 }
 
 public struct ChainInitEvent has copy, drop {
@@ -131,11 +139,13 @@ public struct Container has key, store {
     last_container_child_link_index: u128,
     last_data_type_index: u128,
     last_data_item_index: u128,
+    last_data_item_verification_index: u128,
     last_update_record_index: u128,
     last_owner_id: Option<ID>,
     last_container_child_link_id: Option<ID>,
     last_data_type_id: Option<ID>,
     last_data_item_id: Option<ID>,
+    last_data_item_verification_id: Option<ID>,
     last_update_record_id: Option<ID>,
     prev_container_chain_id: Option<ID>,
 }
@@ -170,6 +180,36 @@ public struct DataItem has key, store {
     prev_data_item_chain_id: Option<ID>,
     prev_id: Option<ID>,
     prev_data_type_item_id: Option<ID>,
+}
+
+public struct DataItemVerification has key, store {
+    id: UID,
+    // Scope
+    container_id: ID,
+    data_item_id: ID,
+    // External linkage
+    external_id: string::String,
+    // Creator
+    creator: Creator,
+    // Metadata
+    name: string::String,
+    description: string::String,
+    content: string::String,
+    sequence_index: u128,
+    external_index: u128,
+  
+    // Targeting
+    recipients: vector<ID>,
+references: vector<ID>,
+    // Verification result
+    verification_success: vector<ID>,
+    verification_failure: vector<ID>,
+
+   
+
+    // Chain pointers
+    prev_data_item_verification_chain_id: Option<ID>,
+    prev_id: Option<ID>,
 }
 
 public struct ContainerChildLink has key, store {
@@ -241,11 +281,13 @@ public struct ContainerCreatedEvent has copy, drop {
     last_container_child_link_index: u128,
     last_data_type_index: u128,
     last_data_item_index: u128,
+    last_data_item_verification_index: u128,
     last_update_record_index: u128,
     last_owner_id: Option<ID>,
     last_container_child_link_id: Option<ID>,
     last_data_type_id: Option<ID>,
     last_data_item_id: Option<ID>,
+    last_data_item_verification_id: Option<ID>,
     last_update_record_id: Option<ID>,
     prev_container_chain_id: Option<ID>,
 }
@@ -280,6 +322,25 @@ public struct DataItemPublishedEvent has copy, drop {
     prev_data_item_chain_id: Option<ID>,
     prev_id: Option<ID>,
     prev_data_type_item_id: Option<ID>,
+}
+
+public struct DataItemVerificationPublishedEvent has copy, drop {
+    object_id: ID,
+    container_id: ID,
+    data_item_id: ID,
+    external_id: string::String,
+    creator: CreatorEvent,
+    name: string::String,
+    description: string::String,
+    content: string::String,
+        sequence_index: u128,
+    external_index: u128,
+    recipients: vector<ID>,
+  references: vector<ID>,
+    verification_success: vector<ID>,
+    verification_failure: vector<ID>,
+    prev_data_item_verification_chain_id: Option<ID>,
+    prev_id: Option<ID>,
 }
 
 public struct ContainerChildLinkAttachedEvent has copy, drop {
@@ -500,11 +561,13 @@ public entry fun create_container(
         last_container_child_link_index: 0,
         last_data_type_index: 0,
         last_data_item_index: 0,
+        last_data_item_verification_index: 0,
         last_update_record_index: 0,
         last_owner_id: option::some(owner_id),
         last_container_child_link_id: option::none(),
         last_data_type_id: option::none(),
         last_data_item_id: option::none(),
+        last_data_item_verification_id: option::none(),
         last_update_record_id: option::none(),
         prev_container_chain_id: last_container_id,
     };
@@ -589,11 +652,13 @@ public entry fun create_container(
             last_container_child_link_index: container.last_container_child_link_index,
             last_data_type_index: container.last_data_type_index,
             last_data_item_index: container.last_data_item_index,
+            last_data_item_verification_index: container.last_data_item_verification_index,
             last_update_record_index: container.last_update_record_index,
             last_owner_id: container.last_owner_id,
             last_container_child_link_id: container.last_container_child_link_id,
             last_data_type_id: container.last_data_type_id,
             last_data_item_id: container.last_data_item_id,
+            last_data_item_verification_id: container.last_data_item_verification_id,
             last_update_record_id: container.last_update_record_id,
             prev_container_chain_id: last_container_id,
         });
@@ -828,6 +893,118 @@ public entry fun publish_data_item(
         });
     };
     transfer::share_object(data_item);
+}
+
+public entry fun publish_data_item_verification(
+    data_item_verification_chain: &mut DataItemVerificationChain,
+    container: &mut Container,
+    data_item: &DataItem,
+    external_id: string::String,
+    name: string::String,
+    description: string::String,
+    content: string::String,
+    external_index: u128,
+    recipients: vector<ID>,
+    references: vector<ID>,
+    verification_success: vector<ID>,
+    verification_failure: vector<ID>,
+    clock: &Clock,
+    ctx: &mut TxContext,
+) {
+    let permission_ref = &container.permission;
+    let event_config_ref = &container.event_config;
+
+    assert_owner(container, permission_ref.public_publish_data_item, ctx);
+
+    let container_id = object::id(container);
+    assert!(data_item.container_id == container_id, E_INVALID_DATAITEM);
+
+    let mut i = 0;
+    let success_len = vector::length(&verification_success);
+    while (i < success_len) {
+        let id = *vector::borrow(&verification_success, i);
+        assert!(
+            !vector::contains(&verification_failure, &id),
+            E_VERIFICATION_CONFLICT
+        );
+        i = i + 1;
+    };
+
+    let data_item_id = object::id(data_item);
+    let next_index = add_with_wrap(container.last_data_item_verification_index, 1);
+
+    let creator_addr = sender(ctx);
+    let creator_timestamp_ms = clock.timestamp_ms();
+
+    let creator = Creator {
+        creator_addr: creator_addr,
+        creator_update_addr: option::none(),
+        creator_timestamp_ms: creator_timestamp_ms,
+        creator_update_timestamp_ms: option::none(),
+    };
+
+    let prev_verification_chain_id = data_item_verification_chain.last_data_item_verification_id;
+
+    let data_item_verification = DataItemVerification {
+        id: object::new(ctx),
+        container_id: container_id,
+        data_item_id: data_item_id,
+        external_id: external_id,
+        creator: creator,
+        name: name,
+        description: description,
+        content: content,
+        sequence_index: next_index,
+        external_index: external_index,
+        recipients: recipients,
+        references: references,
+        verification_success: verification_success,
+        verification_failure: verification_failure,
+        prev_data_item_verification_chain_id: prev_verification_chain_id,
+        prev_id: container.last_data_item_verification_id,
+    };
+
+    let verification_id = object::id(&data_item_verification);
+    let verification_id_option = option::some(verification_id);
+
+    // Update chain
+    data_item_verification_chain.last_data_item_verification_index =
+        add_with_wrap(data_item_verification_chain.last_data_item_verification_index, 1);
+    data_item_verification_chain.last_data_item_verification_id =
+        verification_id_option;
+
+    container.last_data_item_verification_id = verification_id_option;
+    container.last_data_item_verification_index = next_index;
+
+    if (event_config_ref.event_publish) {
+        let creator_event = CreatorEvent {
+            creator_addr: creator_addr,
+            creator_update_addr: option::none(),
+            creator_timestamp_ms: creator_timestamp_ms,
+            creator_update_timestamp_ms: option::none(),
+        };
+
+        event::emit(DataItemVerificationPublishedEvent {
+            object_id: verification_id,
+            container_id: container_id,
+            data_item_id: data_item_id,
+            external_id: data_item_verification.external_id,
+            creator: creator_event,
+            name: data_item_verification.name,
+            description: data_item_verification.description,
+            content: data_item_verification.content,
+            sequence_index: data_item_verification.sequence_index,
+            external_index: data_item_verification.external_index,
+            recipients: data_item_verification.recipients,
+            references: data_item_verification.references,
+            verification_success: data_item_verification.verification_success,
+            verification_failure: data_item_verification.verification_failure,
+            prev_data_item_verification_chain_id: prev_verification_chain_id,
+            prev_id: data_item_verification.prev_id,
+        });
+    };
+
+    transfer::share_object(data_item_verification);
 }
 
 // ==========================
