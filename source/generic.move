@@ -172,15 +172,21 @@ public struct DataItem has key, store {
     data_type_id: ID,
     external_id: string::String,
     creator: Creator,
+    recipients: Option<vector<address>>,
     name: string::String,
     description: string::String,
     content: string::String,
     sequence_index: u128,
     external_index: u128,
     references: vector<ID>,
+        // ✅ New verification tracking
+    verifications_required: u64, // number of successful verifications needed
+    verifications_done: u64,     // number submitted successfully
+    verified: bool,              // flag set to true when enough verifications
     prev_data_item_chain_id: Option<ID>,
     prev_id: Option<ID>,
     prev_data_type_item_id: Option<ID>,
+    
 }
 
 public struct DataItemVerification has key, store {
@@ -314,12 +320,16 @@ public struct DataItemPublishedEvent has copy, drop {
     data_type_id: ID,
     external_id: string::String,
     creator: CreatorEvent,
+    recipients: Option<vector<address>>,
     name: string::String,
     description: string::String,
     content: string::String,
     sequence_index: u128,
     external_index: u128,
     references: vector<ID>,
+    verifications_required: u64, // number of successful verifications needed
+    verifications_done: u64,     // number submitted successfully
+    verified: bool,              // flag set to true when enough verifications
     prev_data_item_chain_id: Option<ID>,
     prev_id: Option<ID>,
     prev_data_type_item_id: Option<ID>,
@@ -876,6 +886,7 @@ public entry fun publish_data_item(
     container: &mut Container,
     data_type: &mut DataType,
     external_id: string::String,
+    recipients: Option<vector<address>>,
     name: string::String,
     description: string::String,
     content: string::String,
@@ -903,6 +914,7 @@ public entry fun publish_data_item(
     };
 
     let data_item_chain_id = data_item_chain.last_data_item_id;
+    let recipients_len = option_vector_address_len(&recipients);
 
     let data_item = DataItem {
         id: object::new(ctx),
@@ -910,12 +922,17 @@ public entry fun publish_data_item(
         data_type_id: data_type_id,
         external_id: external_id,
         creator: creator,
+        recipients: recipients,
         name: name,
         description: description,
         content: content,
         sequence_index: next_index,
         external_index: external_index,
         references: references,
+            // verification fields
+    verifications_required: recipients_len,
+    verifications_done: 0,
+    verified: false,
         prev_data_item_chain_id: data_item_chain_id,
         prev_id: container.last_data_item_id,
         prev_data_type_item_id: data_type.last_data_item_id,
@@ -945,6 +962,7 @@ public entry fun publish_data_item(
             container_id: container_id,
             data_type_id: data_type_id,
             external_id: data_item.external_id,
+            recipients: data_item.recipients,
             creator: creator_event,
             name: data_item.name,
             description: data_item.description,
@@ -952,6 +970,9 @@ public entry fun publish_data_item(
             sequence_index: data_item.sequence_index,
             external_index: data_item.external_index,
             references: data_item.references,
+                verifications_required: data_item.verifications_required,
+    verifications_done: data_item.verifications_done,
+    verified: data_item.verified,
             prev_data_item_chain_id: data_item_chain_id,
             prev_id: data_item.prev_id,
             prev_data_type_item_id: data_item.prev_data_type_item_id,
@@ -2018,3 +2039,12 @@ fun add_with_wrap(val: u128, add: u128): u128 {
         val + add
     }
 }
+
+public fun option_vector_address_len(option_vector_address: &Option<vector<address>>): u64 {
+    match option_vector_address {
+        option::some(vec) => vector::length(vec) as u64,
+        option::none => 0,
+    }
+}
+
+
