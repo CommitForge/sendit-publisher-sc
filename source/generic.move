@@ -984,53 +984,73 @@ public entry fun publish_data_item(
 public entry fun publish_data_item_verification(
     data_item_verification_chain: &mut DataItemVerificationChain,
     container: &mut Container,
-    data_item: &DataItem,
+    data_item: &mut DataItem,
     external_id: string::String,
+    recipients: Option<vector<address>>,
     name: string::String,
     description: string::String,
     content: string::String,
     external_index: u128,
-    recipients: vector<ID>,
     references: vector<ID>,
-    verification_success: vector<ID>,
-    verification_failure: vector<ID>,
+    verification_success: vector<ID>,  // IDs only
+    verification_failure: vector<ID>,  // IDs only
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
     let permission_ref = &container.permission;
     let event_config_ref = &container.event_config;
-
     assert_owner(container, permission_ref.public_publish_data_item, ctx);
 
     let container_id = object::id(container);
     assert!(data_item.container_id == container_id, E_INVALID_DATAITEM);
 
-    let mut i = 0;
-    let success_len = vector::length(&verification_success);
-    while (i < success_len) {
-        let id = *vector::borrow(&verification_success, i);
+    let sender_addr = sender(ctx);
+
+    // Check that sender is allowed (is in recipients)
+    if (option::is_some(&recipients)) {
+        let rec = option::borrow(&recipients);
         assert!(
-            !vector::contains(&verification_failure, &id),
-            E_VERIFICATION_CONFLICT
+            vector::contains(rec, &sender_addr),
+            E_INVALID_VERIFICATION_SENDER
         );
-        i = i + 1;
-    };
+    }
 
     let data_item_id = object::id(data_item);
     let next_index = add_with_wrap(container.last_data_item_verification_index, 1);
-
-    let creator_addr = sender(ctx);
-    let creator_timestamp_ms = clock.timestamp_ms();
+    let timestamp_ms = clock.timestamp_ms();
 
     let creator = Creator {
-        creator_addr: creator_addr,
+        creator_addr: sender_addr,
         creator_update_addr: option::none(),
-        creator_timestamp_ms: creator_timestamp_ms,
+        creator_timestamp_ms: timestamp_ms,
         creator_update_timestamp_ms: option::none(),
     };
 
     let prev_verification_chain_id = data_item_verification_chain.last_data_item_verification_id;
 
+    // Count new successful verifications for this sender
+    let mut increment = 0;
+    if (option::is_some(&recipients)) {
+        let rec = option::borrow(&recipients);
+        if (vector::contains(rec, &sender_addr)) {
+            increment = 1;
+        }
+    }
+
+    // Update data item verification counters
+    data_item.verifications_done = data_item.verifications_done + increment;
+
+    let required = if (option::is_some(&data_item.recipients)) {
+        vector::length(option::borrow(&data_item.recipients)) as u64
+    } else {
+        0
+    };
+    let verified_flag = data_item.verifications_done >= required && required > 0;
+    if (verified_flag) {
+        data_item.verified = true;
+    }
+
+    // Create the verification object with its own flag
     let data_item_verification = DataItemVerification {
         id: object::new(ctx),
         container_id: container_id,
@@ -1046,6 +1066,7 @@ public entry fun publish_data_item_verification(
         references: references,
         verification_success: verification_success,
         verification_failure: verification_failure,
+        verified: verified_flag,
         prev_data_item_verification_chain_id: prev_verification_chain_id,
         prev_id: container.last_data_item_verification_id,
     };
@@ -1056,17 +1077,17 @@ public entry fun publish_data_item_verification(
     // Update chain
     data_item_verification_chain.last_data_item_verification_index =
         add_with_wrap(data_item_verification_chain.last_data_item_verification_index, 1);
-    data_item_verification_chain.last_data_item_verification_id =
-        verification_id_option;
+    data_item_verification_chain.last_data_item_verification_id = verification_id_option;
 
     container.last_data_item_verification_id = verification_id_option;
     container.last_data_item_verification_index = next_index;
 
+    // Emit event
     if (event_config_ref.event_publish) {
         let creator_event = CreatorEvent {
-            creator_addr: creator_addr,
+            creator_addr: sender_addr,
             creator_update_addr: option::none(),
-            creator_timestamp_ms: creator_timestamp_ms,
+            creator_timestamp_ms: timestamp_ms,
             creator_update_timestamp_ms: option::none(),
         };
 
@@ -1085,12 +1106,39 @@ public entry fun publish_data_item_verification(
             references: data_item_verification.references,
             verification_success: data_item_verification.verification_success,
             verification_failure: data_item_verification.verification_failure,
+            verified: data_item_verification.verified,
             prev_data_item_verification_chain_id: prev_verification_chain_id,
             prev_id: data_item_verification.prev_id,
         });
-    };
+    }
 
     transfer::share_object(data_item_verification);
+
+    // === UpdateChainRecord for verification object ===
+    create_update_record(
+        update_chain = data_item_verification_chain,
+        container = container,
+        container_id = container_id,
+        object_id = verification_id,
+        caller = sender_addr,
+        timestamp_ms = timestamp_ms,
+        object_type = string::utf8(b"data_item_verification"),
+        action = 2,
+        ctx = ctx,
+    );
+
+    // === UpdateChainRecord for data item itself ===
+    create_update_record(
+        update_chain = data_item_verification_chain,
+        container = container,
+        container_id = container_id,
+        object_id = data_item_id,
+        caller = sender_addr,
+        timestamp_ms = timestamp_ms,
+        object_type = string::utf8(b"data_item"),
+        action = 2,
+        ctx = ctx,
+    );
 }
 
 // ==========================
@@ -1287,7 +1335,88 @@ public entry fun add_owner(
 
             create_update_record(
                 update_chain,
-                container,
+                container,module sendit_messenger::generic_store;
+
+use iota::clock::Clock;
+use iota::event;
+use iota::tx_context::sender;
+use std::string;
+
+// ==========================
+// CONSTANTS
+// ==========================
+/// true max 340282366920938463463374607431768211455
+const MAX_u128: u128 = 340282366920938463463374607431768211450;
+// error constants
+const E_NOT_OWNER: u64 = 1000;
+const E_INVALID_DATATYPE: u64 = 1001;
+const E_CANNOT_REMOVE_LAST_OWNER: u64 = 1002;
+const E_CANNOT_REMOVE_SELF: u64 = 1003;
+const E_OWNER_NOT_FOUND: u64 = 1004;
+const E_NO_ACTIVE_OWNERS: u64 = 1005;
+const E_INVALID_CONTAINER: u64 = 1006;
+const E_INVALID_DATAITEM: u64 = 1007;
+const E_VERIFICATION_CONFLICT: u64 = 1008;
+
+// ==========================
+// CHAINS
+// ==========================
+public struct ContainerChain has key, store {
+    id: UID,
+    last_container_index: u128,
+    last_container_id: Option<ID>,
+}
+
+public struct UpdateChain has key, store {
+    id: UID,
+    last_update_record_index: u128,
+    last_update_record_id: Option<ID>,
+}
+
+public struct DataItemChain has key, store {
+    id: UID,
+    last_data_item_index: u128,
+    last_data_item_id: Option<ID>,
+}
+
+public struct DataItemVerificationChain has key, store {
+    id: UID,
+    last_data_item_verification_index: u128,
+    last_data_item_verification_id: Option<ID>,
+}
+
+public struct ChainInitEvent has copy, drop {
+    container_chain_id: ID,
+    update_chain_id: ID,
+    data_item_chain_id: ID,
+    data_item_verification_chain_id: ID,
+}
+
+// ==========================
+// COMMONS
+// ==========================
+public struct Creator has store {
+    creator_addr: address,
+    creator_update_addr: Option<address>,
+    creator_timestamp_ms: u64,
+    creator_update_timestamp_ms: Option<u64>,
+}
+
+public struct Specification has store {
+    version: string::String,
+    schemas: string::String,
+    apis: string::String,
+    resources: string::String,
+}
+
+public struct ContainerPermission has store {
+    public_update_container: bool,
+    public_attach_container_child: bool,
+    public_create_data_type: bool,
+    public_publish_data_item: bool,
+}
+
+
                 container_id,
                 object::id(&audit),
                 caller_addr,
@@ -2041,10 +2170,10 @@ fun add_with_wrap(val: u128, add: u128): u128 {
 }
 
 public fun option_vector_address_len(option_vector_address: &Option<vector<address>>): u64 {
-    match option_vector_address {
-        option::some(vec) => vector::length(vec) as u64,
-        option::none => 0,
+    if (option::is_some(option_vector_address)) {
+        let vec_ref = option::borrow(option_vector_address);
+        vector::length(vec_ref) as u64
+    } else {
+        0
     }
 }
-
-
