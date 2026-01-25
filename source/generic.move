@@ -20,6 +20,9 @@ const E_NO_ACTIVE_OWNERS: u64 = 1005;
 const E_INVALID_CONTAINER: u64 = 1006;
 const E_INVALID_DATAITEM: u64 = 1007;
 const E_VERIFICATION_CONFLICT: u64 = 1008;
+const E_INVALID_VERIFICATION_SENDER: u64 = 1009;
+const E_VERIFICATION_ALREADY_SUBMITTED: u64 = 1010;
+
 
 // ==========================
 // CHAINS
@@ -179,10 +182,10 @@ public struct DataItem has key, store {
     sequence_index: u128,
     external_index: u128,
     references: vector<ID>,
-        // ✅ New verification tracking
-    verifications_required: u64, // number of successful verifications needed
-    verifications_done: u64,     // number submitted successfully
-    verified: bool,              // flag set to true when enough verifications
+    // ✅ Verification tracking
+    verification_success_addresses: vector<address>,
+    verification_failure_addresses: vector<address>,
+    verified: bool,              // flag set to true when enough successes
     prev_data_item_chain_id: Option<ID>,
     prev_id: Option<ID>,
     prev_data_type_item_id: Option<ID>,
@@ -327,9 +330,10 @@ public struct DataItemPublishedEvent has copy, drop {
     sequence_index: u128,
     external_index: u128,
     references: vector<ID>,
-    verifications_required: u64, // number of successful verifications needed
-    verifications_done: u64,     // number submitted successfully
-    verified: bool,              // flag set to true when enough verifications
+    // ✅ Verification tracking
+    verification_success_addresses: vector<address>,
+    verification_failure_addresses: vector<address>,
+    verified: bool,              // flag set to true when enough successes
     prev_data_item_chain_id: Option<ID>,
     prev_id: Option<ID>,
     prev_data_type_item_id: Option<ID>,
@@ -898,6 +902,7 @@ public entry fun publish_data_item(
     let permission_ref = &container.permission;
     let event_config_ref = &container.event_config;
     assert_owner(container, permission_ref.public_publish_data_item, ctx);
+
     let container_id = object::id(container);
     assert!(data_type.container_id == container_id, E_INVALID_DATATYPE);
 
@@ -914,7 +919,6 @@ public entry fun publish_data_item(
     };
 
     let data_item_chain_id = data_item_chain.last_data_item_id;
-    let recipients_len = option_vector_address_len(&recipients);
 
     let data_item = DataItem {
         id: object::new(ctx),
@@ -929,10 +933,12 @@ public entry fun publish_data_item(
         sequence_index: next_index,
         external_index: external_index,
         references: references,
-            // verification fields
-    verifications_required: recipients_len,
-    verifications_done: 0,
-    verified: false,
+        
+        // verification fields
+        verification_success_addresses: vector::empty<address>(),
+        verification_failure_addresses: vector::empty<address>(),
+        verified: false,
+
         prev_data_item_chain_id: data_item_chain_id,
         prev_id: container.last_data_item_id,
         prev_data_type_item_id: data_type.last_data_item_id,
@@ -949,6 +955,7 @@ public entry fun publish_data_item(
     container.last_data_item_id = data_item_id_option;
     container.last_data_item_index = next_index;
 
+    // Emit event
     if (event_config_ref.event_publish) {
         let creator_event = CreatorEvent {
             creator_addr: creator_addr,
@@ -970,30 +977,32 @@ public entry fun publish_data_item(
             sequence_index: data_item.sequence_index,
             external_index: data_item.external_index,
             references: data_item.references,
-                verifications_required: data_item.verifications_required,
-    verifications_done: data_item.verifications_done,
-    verified: data_item.verified,
+            verification_success_addresses: data_item.verification_success_addresses,
+            verification_failure_addresses: data_item.verification_failure_addresses,
+            verified: data_item.verified,
             prev_data_item_chain_id: data_item_chain_id,
             prev_id: data_item.prev_id,
             prev_data_type_item_id: data_item.prev_data_type_item_id,
         });
     };
+
     transfer::share_object(data_item);
 }
 
 public entry fun publish_data_item_verification(
-    data_item_verification_chain: &mut DataItemVerificationChain,
+    update_chain: &mut DataItemVerificationChain,
     container: &mut Container,
     data_item: &mut DataItem,
     external_id: string::String,
-    recipients: Option<vector<address>>,
+    recipients: Option<vector<address>>,  // informational only
     name: string::String,
     description: string::String,
     content: string::String,
     external_index: u128,
     references: vector<ID>,
-    verification_success: vector<ID>,  // IDs only
-    verification_failure: vector<ID>,  // IDs only
+    verified: bool,  // true = success, false = failure
+    verification_success: Option<vector<ID>>,  // informational only
+    verification_failure: Option<vector<ID>>,  // informational only
     clock: &Clock,
     ctx: &mut TxContext,
 ) {
@@ -1001,21 +1010,25 @@ public entry fun publish_data_item_verification(
     let event_config_ref = &container.event_config;
     assert_owner(container, permission_ref.public_publish_data_item, ctx);
 
-    let container_id = object::id(container);
-    assert!(data_item.container_id == container_id, E_INVALID_DATAITEM);
-
     let sender_addr = sender(ctx);
+    let container_id = object::id(container);
+    let data_item_id = object::id(data_item);
 
-    // Check that sender is allowed (is in recipients)
-    if (option::is_some(&recipients)) {
-        let rec = option::borrow(&recipients);
-        assert!(
-            vector::contains(rec, &sender_addr),
-            E_INVALID_VERIFICATION_SENDER
-        );
+    assert(data_item.container_id == container_id, E_INVALID_DATAITEM);
+
+    // Check sender is allowed (must be in DataItem recipients)
+    if (option::is_some(&data_item.recipients)) {
+        let rec = option::borrow(&data_item.recipients);
+        assert(vector::contains(rec, &sender_addr), E_INVALID_VERIFICATION_SENDER);
     }
 
-    let data_item_id = object::id(data_item);
+    // Check sender hasn't already submitted
+    assert(
+        !vector::contains(&data_item.verification_success_addresses, &sender_addr) &&
+        !vector::contains(&data_item.verification_failure_addresses, &sender_addr),
+        E_VERIFICATION_ALREADY_SUBMITTED
+    );
+
     let next_index = add_with_wrap(container.last_data_item_verification_index, 1);
     let timestamp_ms = clock.timestamp_ms();
 
@@ -1026,47 +1039,60 @@ public entry fun publish_data_item_verification(
         creator_update_timestamp_ms: option::none(),
     };
 
-    let prev_verification_chain_id = data_item_verification_chain.last_data_item_verification_id;
+    let prev_verification_chain_id = update_chain.last_data_item_verification_id;
 
-    // Count new successful verifications for this sender
-    let mut increment = 0;
-    if (option::is_some(&recipients)) {
-        let rec = option::borrow(&recipients);
-        if (vector::contains(rec, &sender_addr)) {
-            increment = 1;
-        }
+    // Update sender addresses based on success/failure flag
+    if verified {
+        vector::push_back(&mut data_item.verification_success_addresses, sender_addr);
+    } else {
+        vector::push_back(&mut data_item.verification_failure_addresses, sender_addr);
     }
 
-    // Update data item verification counters
-    data_item.verifications_done = data_item.verifications_done + increment;
-
+    // Mark data_item verified if all recipients succeeded
     let required = if (option::is_some(&data_item.recipients)) {
         vector::length(option::borrow(&data_item.recipients)) as u64
     } else {
         0
     };
-    let verified_flag = data_item.verifications_done >= required && required > 0;
-    if (verified_flag) {
+    if vector::length(&data_item.verification_success_addresses) >= required && required > 0 {
         data_item.verified = true;
     }
 
-    // Create the verification object with its own flag
+    // Handle optional informational vectors
+    let info_success = if (option::is_some(&verification_success)) {
+        option::borrow(&verification_success)
+    } else {
+        &vector::empty<ID>()
+    };
+    let info_failure = if (option::is_some(&verification_failure)) {
+        option::borrow(&verification_failure)
+    } else {
+        &vector::empty<ID>()
+    };
+
+    let info_recipients = if (option::is_some(&recipients)) {
+        option::borrow(&recipients)
+    } else {
+        &vector::empty<address>()
+    };
+
+    // Create the verification object
     let data_item_verification = DataItemVerification {
         id: object::new(ctx),
-        container_id: container_id,
-        data_item_id: data_item_id,
-        external_id: external_id,
-        creator: creator,
-        name: name,
-        description: description,
-        content: content,
+        container_id,
+        data_item_id,
+        external_id,
+        creator,
+        name,
+        description,
+        content,
         sequence_index: next_index,
-        external_index: external_index,
-        recipients: recipients,
-        references: references,
-        verification_success: verification_success,
-        verification_failure: verification_failure,
-        verified: verified_flag,
+        external_index,
+        recipients: info_recipients,
+        references,
+        verified,
+        verification_success: info_success,
+        verification_failure: info_failure,
         prev_data_item_verification_chain_id: prev_verification_chain_id,
         prev_id: container.last_data_item_verification_id,
     };
@@ -1074,10 +1100,10 @@ public entry fun publish_data_item_verification(
     let verification_id = object::id(&data_item_verification);
     let verification_id_option = option::some(verification_id);
 
-    // Update chain
-    data_item_verification_chain.last_data_item_verification_index =
-        add_with_wrap(data_item_verification_chain.last_data_item_verification_index, 1);
-    data_item_verification_chain.last_data_item_verification_id = verification_id_option;
+    // Update verification chain
+    update_chain.last_data_item_verification_index =
+        add_with_wrap(update_chain.last_data_item_verification_index, 1);
+    update_chain.last_data_item_verification_id = verification_id_option;
 
     container.last_data_item_verification_id = verification_id_option;
     container.last_data_item_verification_index = next_index;
@@ -1093,19 +1119,19 @@ public entry fun publish_data_item_verification(
 
         event::emit(DataItemVerificationPublishedEvent {
             object_id: verification_id,
-            container_id: container_id,
-            data_item_id: data_item_id,
-            external_id: data_item_verification.external_id,
+            container_id,
+            data_item_id,
+            external_id,
             creator: creator_event,
             name: data_item_verification.name,
             description: data_item_verification.description,
             content: data_item_verification.content,
             sequence_index: data_item_verification.sequence_index,
             external_index: data_item_verification.external_index,
-            recipients: data_item_verification.recipients,
+            recipients: info_recipients,
             references: data_item_verification.references,
-            verification_success: data_item_verification.verification_success,
-            verification_failure: data_item_verification.verification_failure,
+            verification_success: info_success,
+            verification_failure: info_failure,
             verified: data_item_verification.verified,
             prev_data_item_verification_chain_id: prev_verification_chain_id,
             prev_id: data_item_verification.prev_id,
@@ -1114,30 +1140,30 @@ public entry fun publish_data_item_verification(
 
     transfer::share_object(data_item_verification);
 
-    // === UpdateChainRecord for verification object ===
+    // UpdateChainRecord for verification object
     create_update_record(
-        update_chain = data_item_verification_chain,
-        container = container,
-        container_id = container_id,
-        object_id = verification_id,
-        caller = sender_addr,
-        timestamp_ms = timestamp_ms,
-        object_type = string::utf8(b"data_item_verification"),
-        action = 2,
-        ctx = ctx,
+        update_chain,
+        container,
+        container_id,
+        verification_id,
+        sender_addr,
+        timestamp_ms,
+        string::utf8(b"data_item_verification"),
+        2,
+        ctx,
     );
 
-    // === UpdateChainRecord for data item itself ===
+    // UpdateChainRecord for the data item itself
     create_update_record(
-        update_chain = data_item_verification_chain,
-        container = container,
-        container_id = container_id,
-        object_id = data_item_id,
-        caller = sender_addr,
-        timestamp_ms = timestamp_ms,
-        object_type = string::utf8(b"data_item"),
-        action = 2,
-        ctx = ctx,
+        update_chain,
+        container,
+        container_id,
+        data_item_id,
+        sender_addr,
+        timestamp_ms,
+        string::utf8(b"data_item"),
+        2,
+        ctx,
     );
 }
 
@@ -2168,7 +2194,7 @@ fun add_with_wrap(val: u128, add: u128): u128 {
         val + add
     }
 }
-
+/*
 public fun option_vector_address_len(option_vector_address: &Option<vector<address>>): u64 {
     if (option::is_some(option_vector_address)) {
         let vec_ref = option::borrow(option_vector_address);
@@ -2176,4 +2202,4 @@ public fun option_vector_address_len(option_vector_address: &Option<vector<addre
     } else {
         0
     }
-}
+}*/
