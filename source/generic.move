@@ -1,3 +1,4 @@
+
 module sendit_messenger::generic_store;
 
 use iota::clock::Clock;
@@ -201,6 +202,7 @@ public struct DataItemVerification has key, store {
     external_id: string::String,
     // Creator
     creator: Creator,
+      recipients: vector<address>,
     // Metadata
     name: string::String,
     description: string::String,
@@ -209,9 +211,10 @@ public struct DataItemVerification has key, store {
     external_index: u128,
   
     // Targeting
-    recipients: vector<ID>,
+  
 references: vector<ID>,
     // Verification result
+    verified: bool,
     verification_success: vector<ID>,
     verification_failure: vector<ID>,
 
@@ -345,15 +348,16 @@ public struct DataItemVerificationPublishedEvent has copy, drop {
     data_item_id: ID,
     external_id: string::String,
     creator: CreatorEvent,
+        recipients: vector<address>,
     name: string::String,
     description: string::String,
     content: string::String,
         sequence_index: u128,
     external_index: u128,
-    recipients: vector<ID>,
   references: vector<ID>,
-    verification_success: vector<ID>,
-    verification_failure: vector<ID>,
+  verified: bool,
+    verification_success: Option<vector<ID>>,
+    verification_failure: Option<vector<ID>>,
     prev_data_item_verification_chain_id: Option<ID>,
     prev_id: Option<ID>,
 }
@@ -1020,7 +1024,7 @@ public entry fun publish_data_item_verification(
     if (option::is_some(&data_item.recipients)) {
         let rec = option::borrow(&data_item.recipients);
         assert(vector::contains(rec, &sender_addr), E_INVALID_VERIFICATION_SENDER);
-    }
+    };
 
     // Check sender hasn't already submitted
     assert(
@@ -1042,11 +1046,11 @@ public entry fun publish_data_item_verification(
     let prev_verification_chain_id = update_chain.last_data_item_verification_id;
 
     // Update sender addresses based on success/failure flag
-    if verified {
+    if (verified) {
         vector::push_back(&mut data_item.verification_success_addresses, sender_addr);
     } else {
         vector::push_back(&mut data_item.verification_failure_addresses, sender_addr);
-    }
+    };
 
     // Mark data_item verified if all recipients succeeded
     let required = if (option::is_some(&data_item.recipients)) {
@@ -1054,9 +1058,10 @@ public entry fun publish_data_item_verification(
     } else {
         0
     };
-    if vector::length(&data_item.verification_success_addresses) >= required && required > 0 {
+    
+    if (vector::length(&data_item.verification_success_addresses) >= required && required > 0) {
         data_item.verified = true;
-    }
+    };
 
     // Handle optional informational vectors
     let info_success = if (option::is_some(&verification_success)) {
@@ -1064,6 +1069,7 @@ public entry fun publish_data_item_verification(
     } else {
         &vector::empty<ID>()
     };
+
     let info_failure = if (option::is_some(&verification_failure)) {
         option::borrow(&verification_failure)
     } else {
@@ -1073,7 +1079,7 @@ public entry fun publish_data_item_verification(
     let info_recipients = if (option::is_some(&recipients)) {
         option::borrow(&recipients)
     } else {
-        &vector::empty<address>()
+        vector::empty<address>()
     };
 
     // Create the verification object
@@ -1083,12 +1089,12 @@ public entry fun publish_data_item_verification(
         data_item_id,
         external_id,
         creator,
+               recipients: info_recipients,
         name,
         description,
         content,
         sequence_index: next_index,
         external_index,
-        recipients: info_recipients,
         references,
         verified,
         verification_success: info_success,
@@ -1123,12 +1129,12 @@ public entry fun publish_data_item_verification(
             data_item_id,
             external_id,
             creator: creator_event,
+             recipients: info_recipients,
             name: data_item_verification.name,
             description: data_item_verification.description,
             content: data_item_verification.content,
             sequence_index: data_item_verification.sequence_index,
             external_index: data_item_verification.external_index,
-            recipients: info_recipients,
             references: data_item_verification.references,
             verification_success: info_success,
             verification_failure: info_failure,
@@ -1136,7 +1142,7 @@ public entry fun publish_data_item_verification(
             prev_data_item_verification_chain_id: prev_verification_chain_id,
             prev_id: data_item_verification.prev_id,
         });
-    }
+    };
 
     transfer::share_object(data_item_verification);
 
@@ -1361,88 +1367,7 @@ public entry fun add_owner(
 
             create_update_record(
                 update_chain,
-                container,module sendit_messenger::generic_store;
-
-use iota::clock::Clock;
-use iota::event;
-use iota::tx_context::sender;
-use std::string;
-
-// ==========================
-// CONSTANTS
-// ==========================
-/// true max 340282366920938463463374607431768211455
-const MAX_u128: u128 = 340282366920938463463374607431768211450;
-// error constants
-const E_NOT_OWNER: u64 = 1000;
-const E_INVALID_DATATYPE: u64 = 1001;
-const E_CANNOT_REMOVE_LAST_OWNER: u64 = 1002;
-const E_CANNOT_REMOVE_SELF: u64 = 1003;
-const E_OWNER_NOT_FOUND: u64 = 1004;
-const E_NO_ACTIVE_OWNERS: u64 = 1005;
-const E_INVALID_CONTAINER: u64 = 1006;
-const E_INVALID_DATAITEM: u64 = 1007;
-const E_VERIFICATION_CONFLICT: u64 = 1008;
-
-// ==========================
-// CHAINS
-// ==========================
-public struct ContainerChain has key, store {
-    id: UID,
-    last_container_index: u128,
-    last_container_id: Option<ID>,
-}
-
-public struct UpdateChain has key, store {
-    id: UID,
-    last_update_record_index: u128,
-    last_update_record_id: Option<ID>,
-}
-
-public struct DataItemChain has key, store {
-    id: UID,
-    last_data_item_index: u128,
-    last_data_item_id: Option<ID>,
-}
-
-public struct DataItemVerificationChain has key, store {
-    id: UID,
-    last_data_item_verification_index: u128,
-    last_data_item_verification_id: Option<ID>,
-}
-
-public struct ChainInitEvent has copy, drop {
-    container_chain_id: ID,
-    update_chain_id: ID,
-    data_item_chain_id: ID,
-    data_item_verification_chain_id: ID,
-}
-
-// ==========================
-// COMMONS
-// ==========================
-public struct Creator has store {
-    creator_addr: address,
-    creator_update_addr: Option<address>,
-    creator_timestamp_ms: u64,
-    creator_update_timestamp_ms: Option<u64>,
-}
-
-public struct Specification has store {
-    version: string::String,
-    schemas: string::String,
-    apis: string::String,
-    resources: string::String,
-}
-
-public struct ContainerPermission has store {
-    public_update_container: bool,
-    public_attach_container_child: bool,
-    public_create_data_type: bool,
-    public_publish_data_item: bool,
-}
-
-
+                container,
                 container_id,
                 object::id(&audit),
                 caller_addr,
