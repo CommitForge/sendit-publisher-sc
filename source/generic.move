@@ -52,6 +52,7 @@ public struct ChainInitEvent has copy, drop {
     container_chain_id: ID,
     update_chain_id: ID,
     data_item_chain_id: ID,
+    data_item_verification_chain_id: ID,
 }
 
 // ==========================
@@ -503,10 +504,20 @@ fun init(ctx: &mut TxContext) {
     let data_item_id = object::id(&data_item_chain);
     transfer::share_object(data_item_chain);
 
+    let data_item_verification_chain = DataItemVerificationChain {
+        id: object::new(ctx),
+        last_data_item_verification_index: 0,
+        last_data_item_verification_id: option::none<ID>(),
+    };
+
+    let data_item_verification_id = object::id(&data_item_verification_chain);
+    transfer::share_object(data_item_verification_chain);
+
     event::emit(ChainInitEvent {
         container_chain_id: container_id,
         update_chain_id: update_id,
         data_item_chain_id: data_item_id,
+        data_item_verification_chain_id: data_item_verification_id,
     });
 }
 
